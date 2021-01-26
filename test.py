@@ -13,7 +13,7 @@ import pathlib
 
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
-dataset = dfg_dataset(data_path, 3, 0)
+dataset = dfg_dataset(data_path, 100, 0)
 
 class Net(torch.nn.Module):
     def __init__(self):
