@@ -13,7 +13,7 @@ import pathlib
 
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
-dataset = dfg_dataset(data_path)
+dataset = dfg_dataset(data_path, 3, 0)
 
 class Net(torch.nn.Module):
     def __init__(self):
@@ -33,19 +33,29 @@ class Net(torch.nn.Module):
 
 device = torch.device('cpu')
 model = Net().to(device)
-data = dataset[0].to(device)
+dataset_split_pt = int(0.9*dataset.num_data)  # decide the split point for train\test set
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
 
 model.train()
 for epoch in range(200):
     optimizer.zero_grad()
-    out = model(data)
-    loss = F.nll_loss(out, data.y)
-    loss.backward()
-    optimizer.step()
+    for i in range(dataset_split_pt):
+        data = dataset[i].to(device)
+        out = model(data)
+        loss = F.nll_loss(out, data.y)
+        loss.backward()
+        optimizer.step()
 
 model.eval()
-_, pred = model(data).max(dim=1)
-correct = int(pred.eq(data.y).sum().item())
-acc = correct / len(data.y)
+correct, nop_correct, n_test_nodes = 0, 0, 0
+for i in range(dataset.num_data-dataset_split_pt):
+    data = dataset[dataset_split_pt+i].to(device)
+    _, pred = model(data).max(dim=1)
+    n_test_nodes += len(data.y)
+    correct += int(pred.eq(data.y).sum().item())
+    nop_correct += data.x.T[0].eq(data.y).sum().item()
+
+nop_acc = nop_correct / n_test_nodes
+acc = correct / n_test_nodes
+print('No operation accurarcy (difference between feature and label): {:.4f}'.format(nop_acc))
 print('Accuracy: {:.4f}'.format(acc))
