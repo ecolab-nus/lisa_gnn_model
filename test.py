@@ -13,7 +13,7 @@ import pathlib
 
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
-dataset = dfg_dataset(data_path, 100, 0)
+dataset = dfg_dataset(data_path, 10000, 0)
 
 class Net(torch.nn.Module):
     def __init__(self):
@@ -37,14 +37,19 @@ dataset_split_pt = int(0.9*dataset.num_data)  # decide the split point for train
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
 
 model.train()
-for epoch in range(200):
+
+
+for epoch in range(20):
     optimizer.zero_grad()
+    total_loss = 0
     for i in range(dataset_split_pt):
         data = dataset[i].to(device)
         out = model(data)
         loss = F.nll_loss(out, data.y)
+        total_loss += float(loss)
         loss.backward()
         optimizer.step()
+    print(f'Epoch: {epoch:03d}, Loss: {total_loss:.4f}')
 
 model.eval()
 correct, nop_correct, n_test_nodes = 0, 0, 0

@@ -4,7 +4,8 @@ from torch_geometric.data import Data
 from torch_geometric.data import InMemoryDataset
 import numpy as np
 from data_generator import generator
-
+from torch_geometric.utils import contains_self_loops
+from torch_geometric.utils import degree
 
 def load_data(graph_dir, label_dir, id_label):
     """
@@ -31,6 +32,10 @@ def load_data(graph_dir, label_dir, id_label):
             edge.append([int(a), int(b)])
         edge = torch.tensor(edge, dtype=torch.long)
         edge_index = edge.t().contiguous()
+        if contains_self_loops(edge_index):
+            print(edge_index)
+            assert False
+        
         f_graph.close()
 
         # Get label data
@@ -47,6 +52,10 @@ def load_data(graph_dir, label_dir, id_label):
         y = torch.tensor(y, dtype=torch.long)
         f_label.close()
 
+
+        # deg = degree(edge_index)
+        # if len(deg) != len(x):
+        #     assert (False)
         data = Data(x=x, edge_index=edge_index, y=y)
         dataset.append(data)
     return dataset
