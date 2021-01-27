@@ -33,7 +33,7 @@ from torch_geometric.utils import degree
 
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
-dataset = dfg_dataset(data_path, 10000, 0)
+dataset = dfg_dataset(data_path, 100, 0)
 
 class LISAConv(MessagePassing):
     """The GraphSAGE operator from the `"Inductive Representation Learning on
@@ -74,8 +74,9 @@ class LISAConv(MessagePassing):
 
         if self.ispropagate:
             self.lin_l = Linear(in_channels[0], out_channels, bias=True)
-        
-        self.lin_r = Linear(in_channels[1], out_channels, bias=True)
+            self.lin_r = Linear(in_channels[1], out_channels, bias=False)
+        else:
+            self.lin_r = Linear(in_channels[0], out_channels, bias=True)
 
         self.reset_parameters()
 
@@ -90,20 +91,16 @@ class LISAConv(MessagePassing):
         if isinstance(x, Tensor):
             x: OptPairTensor = (x, x)
 
-        # propagate_type: (x: OptPairTensor)
-        # print("x:", x[0].size(), x[1].size() )
         if self.ispropagate:
             out = self.propagate(edge_index, x=x, size=size)
-            # print("out1", out.size())
             out = self.lin_l(out)
-            # print("out2", out)
-            # out = out.repeat(1,30)
             x_r = x[1]
-            
-            # print("x_r", x_r.size())
+            print("out", out)
+            print("x_r", x_r)
             if x_r is not None:
-                # print("temp", temp.size())
-                out += self.lin_r(x_r)
+                temp = self.lin_r(x_r)
+                print("temp", temp)
+                out += temp
         else:
             x_r = x[1]
             out = self.lin_r(x_r)
@@ -114,26 +111,12 @@ class LISAConv(MessagePassing):
         return out
 
     def message(self, x_j: Tensor) -> Tensor:
-        # print ("x_j", x_j.size())
         return x_j
 
     def aggregate(self,  inputs: Tensor, x : Union[Tensor, OptPairTensor], index: Tensor) -> Tensor:
         deg = degree(index,  num_nodes = len(x[0]), dtype=inputs.dtype)
-        
-        # print("index",len(x[0]), index.size(), index)
-        # print("deg1",deg.size(), deg)
         deg = deg.clamp_(1).view(-1,  1)
-        # print("deg2",deg.size())
-        # print("inputs",inputs.size(), deg.size())
-        
         return deg
-
-        
-    # def message_and_aggregate(self, adj_t: SparseTensor,
-    #                           x: OptPairTensor) -> Tensor:
-    #     adj_t = adj_t.set_value(None, layout=None)
-    #     result = matmul(adj_t, x[0], reduce=self.aggr)
-    #     return result
 
 
     def __repr__(self):
@@ -170,7 +153,7 @@ class Net(torch.nn.Module):
         return x
 
 device = torch.device('cpu')
-model = Net(dataset.num_node_features, 30, 2).to(device)
+model = Net(dataset.num_node_features, 30, 1).to(device)
 dataset_split_pt = int(0.9*dataset.num_data)  # decide the split point for train\test set
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
 
