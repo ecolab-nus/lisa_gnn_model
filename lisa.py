@@ -91,17 +91,11 @@ class LISAConv(MessagePassing):
         deg = degree(edge_index[1],  num_nodes = len(x[0]))
         deg = deg.clamp_(1).view(-1,  1)
         # print("deg", deg.size())
-        # row, col = edge_index
-        # deg_inv_sqrt = deg.pow(0.5)
-        # norm = deg[col] 
-        # out = self.propagate(edge_index, x=x, norm=norm)
         out = self.lin_l(deg)
 
         # print("out", out.size())
        
         if x_r is not None:
-            # temp = self.lin_r(x_r)
-            # print("temp", temp.size())
             out += x_r
         
         if self.normalize:
@@ -140,22 +134,11 @@ class Net(torch.nn.Module):
             if i != self.num_layers - 1:
                 x = x.relu()
                 x = F.dropout(x, p=0.5, training=self.training)
-            # else:
-            #     x = x.PReLU()
             # print("x",i, x)
         x = torch.flatten(x)
-        # x = torch.round(x)
-        # x = x.long()
-        # print("xf", x)
         return x
 
-    # def full_forward(self, x, edge_index):
-    #     for i, conv in enumerate(self.convs):
-    #         x = conv(x, edge_index)
-    #         if i != self.num_layers - 1:
-    #             x = x.relu()
-    #             x = F.dropout(x, p=0.5, training=self.training)
-    #     return x
+ 
 
 device = torch.device('cpu')
 model = Net(dataset.num_node_features, 30, 2).to(device)
