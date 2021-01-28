@@ -30,7 +30,7 @@ from torch_geometric.nn import SAGEConv
 from torch_geometric.datasets import Planetoid
 from torch_geometric.data import NeighborSampler as RawNeighborSampler
 from torch_geometric.utils import degree
-
+from torch_geometric.utils import add_self_loops
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
 dataset = dfg_dataset(data_path, 100, 0)
@@ -59,64 +59,63 @@ class LISAConv(MessagePassing):
     """
     def __init__(self, in_channels: Union[int, Tuple[int, int]],
                  out_channels: int, normalize: bool = False,
-                 bias: bool = True, ispropagate:bool = True, **kwargs):  # yapf: disable
-        kwargs.setdefault('aggr', 'mean')
+                 bias: bool = True,  **kwargs):  # yapf: disable
+        kwargs.setdefault('aggr', None)
         super(LISAConv, self).__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.normalize = normalize
-        self.ispropagate = ispropagate
-        print("out_channels",out_channels)
+        # print("out_channels",out_channels)
 
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
 
-        if self.ispropagate:
-            self.lin_l = Linear(in_channels[0], out_channels, bias=True)
-            self.lin_r = Linear(in_channels[1], out_channels, bias=False)
-        else:
-            self.lin_r = Linear(in_channels[0], out_channels, bias=True)
-
+        self.lin_l = Linear(in_channels[0], out_channels, bias=True)
+        # self.lin_r = Linear(in_channels[1], out_channels, bias=True)
+        self.lin_f = Linear(1, 1, bias=True)
         self.reset_parameters()
 
     def reset_parameters(self):
-        if self.ispropagate:
-            self.lin_l.reset_parameters()
-        self.lin_r.reset_parameters()
+        self.lin_l.reset_parameters()
+        # self.lin_r.reset_parameters()
 
     def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
                 size: Size = None) -> Tensor:
         """"""
         if isinstance(x, Tensor):
             x: OptPairTensor = (x, x)
+        add_self_loops(edge_index, num_nodes = len(x[0]))
+        x_r = x[1]
+        # print("x_r", x_r.size())
+        deg = degree(edge_index[1],  num_nodes = len(x[0]))
+        deg = deg.clamp_(1).view(-1,  1)
+        # print("deg", deg.size())
+        # row, col = edge_index
+        # deg_inv_sqrt = deg.pow(0.5)
+        # norm = deg[col] 
+        # out = self.propagate(edge_index, x=x, norm=norm)
+        out = self.lin_l(deg)
 
-        if self.ispropagate:
-            out = self.propagate(edge_index, x=x, size=size)
-            out = self.lin_l(out)
-            x_r = x[1]
-            print("out", out)
-            print("x_r", x_r)
-            if x_r is not None:
-                temp = self.lin_r(x_r)
-                print("temp", temp)
-                out += temp
-        else:
-            x_r = x[1]
-            out = self.lin_r(x_r)
-
+        # print("out", out.size())
+       
+        if x_r is not None:
+            # temp = self.lin_r(x_r)
+            # print("temp", temp.size())
+            out += x_r
+        
         if self.normalize:
-            out = F.normalize(out, p=2., dim=-1)
-
+            out = F.normalize(out, p=2.,)
+        # print("out", out.size())
+        lin_f = self.lin_f(out)
         return out
 
-    def message(self, x_j: Tensor) -> Tensor:
-        return x_j
+    def message(self,x_i, x_j, norm):
+        return norm.view(-1, 1) * x_j
+
 
     def aggregate(self,  inputs: Tensor, x : Union[Tensor, OptPairTensor], index: Tensor) -> Tensor:
-        deg = degree(index,  num_nodes = len(x[0]), dtype=inputs.dtype)
-        deg = deg.clamp_(1).view(-1,  1)
-        return deg
+        return inputs
 
 
     def __repr__(self):
@@ -130,9 +129,9 @@ class Net(torch.nn.Module):
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
         for i in range(num_layers):
-            in_channels = in_channels if i == 0 else hidden_channels
-            ispropagate = True if i==0 else False
-            self.convs.append(LISAConv(in_channels, hidden_channels, normalize =  False , ispropagate = ispropagate, aggr = 'add'))
+            # in_channels = in_channels if i == 0 else 1
+            out_channels = 1 if i == num_layers-1 else 1
+            self.convs.append(LISAConv(1, out_channels, normalize =  False ))
 
     def forward(self, x, adjs):
         # print("adjs", adjs)
@@ -141,26 +140,32 @@ class Net(torch.nn.Module):
             if i != self.num_layers - 1:
                 x = x.relu()
                 x = F.dropout(x, p=0.5, training=self.training)
-        # print(x)
+            # else:
+            #     x = x.PReLU()
+            # print("x",i, x)
+        x = torch.flatten(x)
+        # x = torch.round(x)
+        # x = x.long()
+        # print("xf", x)
         return x
 
-    def full_forward(self, x, edge_index):
-        for i, conv in enumerate(self.convs):
-            x = conv(x, edge_index)
-            if i != self.num_layers - 1:
-                x = x.relu()
-                x = F.dropout(x, p=0.5, training=self.training)
-        return x
+    # def full_forward(self, x, edge_index):
+    #     for i, conv in enumerate(self.convs):
+    #         x = conv(x, edge_index)
+    #         if i != self.num_layers - 1:
+    #             x = x.relu()
+    #             x = F.dropout(x, p=0.5, training=self.training)
+    #     return x
 
 device = torch.device('cpu')
-model = Net(dataset.num_node_features, 30, 1).to(device)
+model = Net(dataset.num_node_features, 30, 2).to(device)
 dataset_split_pt = int(0.9*dataset.num_data)  # decide the split point for train\test set
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
 
 model.train()
 
 
-for epoch in range(1):
+for epoch in range(100):
     optimizer.zero_grad()
     total_loss = 0
     for i in range(dataset_split_pt):
@@ -169,7 +174,7 @@ for epoch in range(1):
         # print("data.edge_index", len(data.x), data.edge_index.size())
         out = model(data.x, data.edge_index)
         try:
-            loss = F.nll_loss(out, data.y)
+            loss = F.mse_loss(out, data.y, reduction = 'mean')
         except Exception as error:
             print(i)
             raise error
@@ -184,7 +189,10 @@ model.eval()
 correct, nop_correct, n_test_nodes = 0, 0, 0
 for i in range(dataset.num_data-dataset_split_pt):
     data = dataset[dataset_split_pt+i].to(device)
-    _, pred = model(data.x, data.edge_index).max(dim=1)
+    pred = model(data.x, data.edge_index)
+    pred = torch.round(pred)
+    pred = pred.long()
+    pred = pred.float()
     n_test_nodes += len(data.y)
     print("pred", pred)
     print("data.y", data.y)

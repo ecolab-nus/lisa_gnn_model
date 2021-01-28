@@ -49,7 +49,7 @@ def load_data(graph_dir, label_dir, id_label):
             x.append([int(m_x) for m_x in a])
             y.append(int(b[id_label]))
         x = torch.tensor(x, dtype=torch.float)
-        y = torch.tensor(y, dtype=torch.long)
+        y = torch.tensor(y, dtype=torch.float)
         f_label.close()
 
 
