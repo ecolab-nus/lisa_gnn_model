@@ -33,7 +33,7 @@ from torch_geometric.utils import degree
 from torch_geometric.utils import add_self_loops
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
-dataset = dfg_dataset(data_path, 100, 0)
+dataset = dfg_dataset(data_path, 500, 0)
 
 class LISAConv(MessagePassing):
     """The GraphSAGE operator from the `"Inductive Representation Learning on
@@ -132,7 +132,7 @@ class Net(torch.nn.Module):
         for i, conv in enumerate(self.convs):
             x = conv(x, adjs)
             if i != self.num_layers - 1:
-                x = x.relu()
+                # x = x.relu()
                 x = F.dropout(x, p=0.5, training=self.training)
             # print("x",i, x)
         x = torch.flatten(x)
