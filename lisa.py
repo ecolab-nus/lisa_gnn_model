@@ -31,9 +31,44 @@ from torch_geometric.datasets import Planetoid
 from torch_geometric.data import NeighborSampler as RawNeighborSampler
 from torch_geometric.utils import degree
 from torch_geometric.utils import add_self_loops
+
+import matplotlib.pyplot as plt
+import numpy as np
+
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
-dataset = dfg_dataset(data_path, 500, 0)
+
+val_freq = 50  # Do validation for every [val_freq] epochs
+num_graphs = 10000  # number of graphs to load into whole dataset
+label_indicator = 0  # indicate which column to use as training label
+dataset = dfg_dataset(data_path, num_graphs, label_indicator)
+portion = [0.7, 0.1, 0.2]  # Split dataset into train\validation\test.
+datasets_len = [int(x*num_graphs) for x in portion]
+
+class history():
+    def __init__(self):
+        self.train_loss = []
+        self.valid_loss = []
+        self.valid_acc = []
+    def add_tl(self, loss): # add train loss (average for each graph, so that the batch size doesn;t matter)
+        self.train_loss.append(loss)
+    def add_vl(self , loss):  #  add validation loss
+        self.valid_loss.append(loss)
+    def add_valid_acc(self, acc):
+        self.valid_acc.append(acc)
+    def plot_hist(self):
+        # TODO, plot the history for loss
+        fig, ax = plt.subplots()  # Create a figure containing a single axes.
+        ax.plot(range(len(self.train_loss)), self.train_loss, label="train")
+        ax.plot([val_freq*(x+1) for x in range(len(self.valid_loss))], self.valid_loss, label="validation")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Avg Loss per graph")
+        ax.set_title("Loss History")
+        ax.legend()
+        plt.show()
+    def check_point(self):
+        # TODO, save  the best model
+        pass
 
 class LISAConv(MessagePassing):
     """The GraphSAGE operator from the `"Inductive Representation Learning on
@@ -142,43 +177,59 @@ class Net(torch.nn.Module):
 
 device = torch.device('cpu')
 model = Net(dataset.num_node_features, 30, 2).to(device)
-dataset_split_pt = int(0.9*dataset.num_data)  # decide the split point for train\test set
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
-
 model.train()
 
-
+hist = history()
 for epoch in range(100):
-    optimizer.zero_grad()
-    total_loss = 0
-    for i in range(dataset_split_pt):
-        # print("graph index", i)
-        data = dataset[i].to(device)
-        # print("data.edge_index", len(data.x), data.edge_index.size())
-        out = model(data.x, data.edge_index)
-        try:
-            loss = F.mse_loss(out, data.y, reduction = 'mean')
-        except Exception as error:
-            print(i)
-            raise error
-
-        total_loss += float(loss)
-        loss.backward()
-        optimizer.step()
-    if epoch % 5 == 0:
+    print(epoch)
+    if epoch % val_freq == val_freq-1:  # Do validation, turn mode to evaluation
+        model.eval()
+        total_loss = 0
+        correct, n_val_nodes = 0, 0
+        for i in range(datasets_len[0], sum(datasets_len[:2])):  # For data belong to training
+            data = dataset[i].to(device)
+            out = model(data.x, data.edge_index)
+            try:
+                loss = F.mse_loss(out, data.y, reduction='mean')
+            except Exception as error:
+                raise error
+            total_loss += float(loss)
+            pred = torch.round(out)
+            pred = pred.long().float()
+            n_val_nodes += len(data.y)
+            correct += int(pred.eq(data.y).sum().item())
+        acc = correct / n_val_nodes
+        print(f'#VALIDATION# Epoch: {epoch:03d}, Loss: {total_loss:.4f}, Accuracy: {acc:.4f}')
+        hist.add_vl(total_loss/datasets_len[1])
+        hist.add_valid_acc(acc)
+    else:  # Do training, turn mode to train
+        optimizer.zero_grad()
+        model.train()
+        total_loss = 0
+        for i in range(datasets_len[0]):  # For data belong to training
+            data = dataset[i].to(device)
+            out = model(data.x, data.edge_index)
+            try:
+                loss = F.mse_loss(out, data.y, reduction='mean')
+            except Exception as error:
+                raise error
+            total_loss += float(loss)
+            loss.backward()
+            optimizer.step()
         print(f'Epoch: {epoch:03d}, Loss: {total_loss:.4f}')
+        hist.add_tl(total_loss/datasets_len[0])
 
+hist.plot_hist()
 model.eval()
 correct, nop_correct, n_test_nodes = 0, 0, 0
-for i in range(dataset.num_data-dataset_split_pt):
-    data = dataset[dataset_split_pt+i].to(device)
+for i in range(sum(datasets_len[:2]), sum(datasets_len[:3])):
+    data = dataset[i].to(device)
     pred = model(data.x, data.edge_index)
     pred = torch.round(pred)
     pred = pred.long()
     pred = pred.float()
     n_test_nodes += len(data.y)
-    print("pred", pred)
-    print("data.y", data.y)
     correct += int(pred.eq(data.y).sum().item())
     nop_correct += data.x.T[0].eq(data.y).sum().item()
 
