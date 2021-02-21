@@ -19,8 +19,6 @@ import torch.nn.functional as F
 # from torch_sparse import SparseTensor
 from torch_geometric.nn.conv import MessagePassing
 
-
-
 import torch.nn as nn
 from torch_cluster import random_walk
 from sklearn.linear_model import LogisticRegression
@@ -28,36 +26,57 @@ from sklearn.linear_model import LogisticRegression
 import torch_geometric.transforms as T
 from torch_geometric.nn import SAGEConv
 from torch_geometric.datasets import Planetoid
-from torch_geometric.data import NeighborSampler as RawNeighborSampler
+from torch_geometric.data import NeighborSampler as RawNeighborSampler, Batch, DataLoader
 from torch_geometric.utils import degree
 from torch_geometric.utils import add_self_loops
-
 import matplotlib.pyplot as plt
 import numpy as np
 
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
-
-val_freq = 50  # Do validation for every [val_freq] epochs
+####################### Parameter Setting ###################################
+val_freq = 10  # Do validation for every [val_freq] epochs
 num_graphs = 10000  # number of graphs to load into whole dataset
 label_indicator = 0  # indicate which column to use as training label
+batch_size = 128
+epoch = 20
+
+####################### Dataset Loading ######################################
 dataset = dfg_dataset(data_path, num_graphs, label_indicator)
-portion = [0.7, 0.1, 0.2]  # Split dataset into train\validation\test.
-datasets_len = [int(x*num_graphs) for x in portion]
+dataset = dataset.shuffle()
+
+####################### Data loader for minibatch #############################
+# test:validation:train = 1:1:8
+test_dataset = dataset[:len(dataset) // 10]
+val_dataset = dataset[len(dataset) // 10:len(dataset) // 5]
+train_dataset = dataset[len(dataset) // 5:]
+
+test_loader = DataLoader(test_dataset, batch_size=batch_size)
+val_loader = DataLoader(val_dataset, batch_size=batch_size)
+train_loader = DataLoader(train_dataset, batch_size=batch_size)
 
 class history():
     def __init__(self):
         self.train_loss = []
         self.valid_loss = []
         self.valid_acc = []
-    def add_tl(self, loss): # add train loss (average for each graph, so that the batch size doesn;t matter)
+        self.best_val_loss = 0
+
+    def add_tl(self, loss): # add train loss (average for each graph, so that the batch size doesn't matter)
         self.train_loss.append(loss)
-    def add_vl(self , loss):  #  add validation loss
+        # Don't save the model during training, otherwise too many "saving" at the beginning
+
+    def add_vl(self, loss):  #  add validation loss
         self.valid_loss.append(loss)
+        if (not self.best_val_loss) or loss < self.best_val_loss:
+            self.best_val_loss = loss
+            return True
+        return False
+
     def add_valid_acc(self, acc):
         self.valid_acc.append(acc)
+
     def plot_hist(self):
-        # TODO, plot the history for loss
         fig, ax = plt.subplots()  # Create a figure containing a single axes.
         ax.plot(range(len(self.train_loss)), self.train_loss, label="train")
         ax.plot([val_freq*(x+1) for x in range(len(self.valid_loss))], self.valid_loss, label="validation")
@@ -65,10 +84,8 @@ class history():
         ax.set_ylabel("Avg Loss per graph")
         ax.set_title("Loss History")
         ax.legend()
-        plt.show()
-    def check_point(self):
-        # TODO, save  the best model
-        pass
+        print("Save to loss_history.jpg")
+        plt.savefig("loss_history.jpg")
 
 class LISAConv(MessagePassing):
     """The GraphSAGE operator from the `"Inductive Representation Learning on
@@ -173,22 +190,29 @@ class Net(torch.nn.Module):
         x = torch.flatten(x)
         return x
 
- 
+
+def save_model(m_model, PATH):
+    torch.save(m_model.state_dict(), PATH)
+
+def load_model(PATH):
+    m_model = Net(dataset.num_node_features, 30, 2).to(device)
+    m_model.load_state_dict(torch.load(PATH))
+    return m_model
 
 device = torch.device('cpu')
 model = Net(dataset.num_node_features, 30, 2).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
 model.train()
 
+####################### Model Training #############################
 hist = history()
-for epoch in range(100):
-    print(epoch)
-    if epoch % val_freq == val_freq-1:  # Do validation, turn mode to evaluation
+for n_iter in range(epoch):
+    if n_iter % val_freq == val_freq-1:  # Do validation, turn mode to evaluation
         model.eval()
         total_loss = 0
         correct, n_val_nodes = 0, 0
-        for i in range(datasets_len[0], sum(datasets_len[:2])):  # For data belong to training
-            data = dataset[i].to(device)
+        for data in val_loader:
+            data = data.to(device)
             out = model(data.x, data.edge_index)
             try:
                 loss = F.mse_loss(out, data.y, reduction='mean')
@@ -200,15 +224,21 @@ for epoch in range(100):
             n_val_nodes += len(data.y)
             correct += int(pred.eq(data.y).sum().item())
         acc = correct / n_val_nodes
-        print(f'#VALIDATION# Epoch: {epoch:03d}, Loss: {total_loss:.4f}, Accuracy: {acc:.4f}')
-        hist.add_vl(total_loss/datasets_len[1])
+        print(f'#VALIDATION# Epoch: {n_iter:03d}, Loss: {total_loss:.4f}, Accuracy: {acc:.4f}')
+        is_best = hist.add_vl(total_loss/batch_size)
         hist.add_valid_acc(acc)
+        # Save the model if is best
+        if is_best:
+            if not os.path.exists("checkpoint"):
+                os.mkdir("checkpoint")
+            file_path = os.path.join("checkpoint", str(n_iter)+".pt")
+            save_model(model, file_path)
     else:  # Do training, turn mode to train
         optimizer.zero_grad()
         model.train()
         total_loss = 0
-        for i in range(datasets_len[0]):  # For data belong to training
-            data = dataset[i].to(device)
+        for data in train_loader:
+            data = data.to(device)
             out = model(data.x, data.edge_index)
             try:
                 loss = F.mse_loss(out, data.y, reduction='mean')
@@ -217,14 +247,15 @@ for epoch in range(100):
             total_loss += float(loss)
             loss.backward()
             optimizer.step()
-        print(f'Epoch: {epoch:03d}, Loss: {total_loss:.4f}')
-        hist.add_tl(total_loss/datasets_len[0])
-
+        print(f'Epoch: {n_iter:03d}, Loss: {total_loss:.4f}')
+        hist.add_tl(total_loss/batch_size)
 hist.plot_hist()
+
+####################### Model Testing #############################
 model.eval()
 correct, nop_correct, n_test_nodes = 0, 0, 0
-for i in range(sum(datasets_len[:2]), sum(datasets_len[:3])):
-    data = dataset[i].to(device)
+for data in test_dataset:
+    data = data.to(device)
     pred = model(data.x, data.edge_index)
     pred = torch.round(pred)
     pred = pred.long()
@@ -232,8 +263,9 @@ for i in range(sum(datasets_len[:2]), sum(datasets_len[:3])):
     n_test_nodes += len(data.y)
     correct += int(pred.eq(data.y).sum().item())
     nop_correct += data.x.T[0].eq(data.y).sum().item()
-
 nop_acc = nop_correct / n_test_nodes
 acc = correct / n_test_nodes
 print('No operation accurarcy (difference between feature and label): {:.4f}'.format(nop_acc))
 print('Accuracy: {:.4f}'.format(acc))
+
+
