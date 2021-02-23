@@ -1,4 +1,5 @@
 import sys
+
 sys.path.append('../dfg_generator')
 sys.path.append('../dfg_generator/dfg')
 sys.path.append('../dfg_generator/graph_generation')
@@ -34,12 +35,13 @@ import numpy as np
 
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
+
 ####################### Parameter Setting ###################################
-val_freq = 10  # Do validation for every [val_freq] epochs
+val_freq = 30  # Do validation for every [val_freq] epochs
 num_graphs = 10000  # number of graphs to load into whole dataset
 label_indicator = 0  # indicate which column to use as training label
-batch_size = 128
-epoch = 20
+batch_size = 100
+epoch = 200
 
 ####################### Dataset Loading ######################################
 dataset = dfg_dataset(data_path, num_graphs, label_indicator)
@@ -55,31 +57,33 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size)
 val_loader = DataLoader(val_dataset, batch_size=batch_size)
 train_loader = DataLoader(train_dataset, batch_size=batch_size)
 
+
 class history():
     def __init__(self):
         self.train_loss = []
         self.valid_loss = []
         self.valid_acc = []
-        self.best_val_loss = 0
+        self.best_val_acc = 0
 
-    def add_tl(self, loss): # add train loss (average for each graph, so that the batch size doesn't matter)
+    def add_tl(self, loss):  # add train loss (average for each graph, so that the batch size doesn't matter)
         self.train_loss.append(loss)
         # Don't save the model during training, otherwise too many "saving" at the beginning
 
-    def add_vl(self, loss):  #  add validation loss
+    def add_vl(self, loss):  # add validation loss
         self.valid_loss.append(loss)
-        if (not self.best_val_loss) or loss < self.best_val_loss:
-            self.best_val_loss = loss
-            return True
-        return False
 
     def add_valid_acc(self, acc):
         self.valid_acc.append(acc)
+        if acc >= self.best_val_acc:
+            self.best_val_acc = acc
+            return True
+        else:
+            return False
 
     def plot_hist(self):
         fig, ax = plt.subplots()  # Create a figure containing a single axes.
         ax.plot(range(len(self.train_loss)), self.train_loss, label="train")
-        ax.plot([val_freq*(x+1) for x in range(len(self.valid_loss))], self.valid_loss, label="validation")
+        ax.plot([val_freq * x for x in range(len(self.valid_loss))], self.valid_loss, label="validation")
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Avg Loss per graph")
         ax.set_title("Loss History")
@@ -87,14 +91,29 @@ class history():
         print("Save to loss_history.jpg")
         plt.savefig("loss_history.jpg")
 
+        fig2, ax2 = plt.subplots()  # Create a figure containing a single axes.
+        ax2.plot([val_freq * x for x in range(len(self.valid_acc))], self.valid_acc, label="validation")
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("Accuracy")
+        ax2.set_title("Accuracy History")
+        ax2.legend()
+        print("Save to acc_history.jpg")
+        plt.savefig("acc_history.jpg")
+
+def save_model(m_model, PATH):
+    torch.save(m_model.state_dict(), PATH)
+
+def load_model(PATH):
+    m_model = Net(dataset.num_node_features, 30, 2).to(device)
+    m_model.load_state_dict(torch.load(PATH))
+    return m_model
+
 class LISAConv(MessagePassing):
     """The GraphSAGE operator from the `"Inductive Representation Learning on
     Large Graphs" <https://arxiv.org/abs/1706.02216>`_ paper
-
     .. math::
         \mathbf{x}^{\prime}_i = \mathbf{W}_1 \mathbf{x}_i + \mathbf{W_2} \cdot
         \mathrm{mean}_{j \in \mathcal{N(i)}} \mathbf{x}_j
-
     Args:
         in_channels (int or tuple): Size of each input sample. A tuple
             corresponds to the sizes of source and target dimensionalities.
@@ -109,9 +128,10 @@ class LISAConv(MessagePassing):
         **kwargs (optional): Additional arguments of
             :class:`torch_geometric.nn.conv.MessagePassing`.
     """
+
     def __init__(self, in_channels: Union[int, Tuple[int, int]],
                  out_channels: int, normalize: bool = False,
-                 bias: bool = True,  **kwargs):  # yapf: disable
+                 bias: bool = True, **kwargs):  # yapf: disable
         kwargs.setdefault('aggr', None)
         super(LISAConv, self).__init__(**kwargs)
 
@@ -137,32 +157,30 @@ class LISAConv(MessagePassing):
         """"""
         if isinstance(x, Tensor):
             x: OptPairTensor = (x, x)
-        add_self_loops(edge_index, num_nodes = len(x[0]))
+        add_self_loops(edge_index, num_nodes=len(x[0]))
         x_r = x[1]
         # print("x_r", x_r.size())
-        deg = degree(edge_index[1],  num_nodes = len(x[0]))
-        deg = deg.clamp_(1).view(-1,  1)
+        deg = degree(edge_index[1], num_nodes=len(x[0]))
+        deg = deg.clamp_(1).view(-1, 1)
         # print("deg", deg.size())
         out = self.lin_l(deg)
 
         # print("out", out.size())
-       
+
         if x_r is not None:
             out += x_r
-        
+
         if self.normalize:
-            out = F.normalize(out, p=2.,)
+            out = F.normalize(out, p=2., )
         # print("out", out.size())
         lin_f = self.lin_f(out)
         return out
 
-    def message(self,x_i, x_j, norm):
+    def message(self, x_i, x_j, norm):
         return norm.view(-1, 1) * x_j
 
-
-    def aggregate(self,  inputs: Tensor, x : Union[Tensor, OptPairTensor], index: Tensor) -> Tensor:
+    def aggregate(self, inputs: Tensor, x: Union[Tensor, OptPairTensor], index: Tensor) -> Tensor:
         return inputs
-
 
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
@@ -176,8 +194,8 @@ class Net(torch.nn.Module):
         self.convs = nn.ModuleList()
         for i in range(num_layers):
             # in_channels = in_channels if i == 0 else 1
-            out_channels = 1 if i == num_layers-1 else 1
-            self.convs.append(LISAConv(1, out_channels, normalize =  False ))
+            out_channels = 1 if i == num_layers - 1 else 1
+            self.convs.append(LISAConv(1, out_channels, normalize=False))
 
     def forward(self, x, adjs):
         # print("adjs", adjs)
@@ -190,82 +208,88 @@ class Net(torch.nn.Module):
         x = torch.flatten(x)
         return x
 
+def train(model, data, device, optimizer): # For training, the input data is a BATCH DATA iterated from DATALOADER.
+    model.train()
+    optimizer.zero_grad()
+    data = data.to(device)
+    out = model(data.x, data.edge_index)
+    try:
+        loss = F.mse_loss(out, data.y, reduction='mean')
+    except Exception as error:
+        raise error
+    loss.backward()
+    optimizer.step()
+    return loss/data.num_graphs
+    
+def validation(model, val_dataset, device): # For validation, the input data is WHOLE VALIDATION DATASET.
+    model.eval()
+    global save_id
+    total_loss = 0
+    correct, n_val_nodes = 0, 0
+    for data in val_dataset:
+        # print(data.num_graphs)
+        data = data.to(device)
+        out = model(data.x, data.edge_index)
+        try:
+            loss = F.mse_loss(out, data.y, reduction='mean')
+        except Exception as error:
+            raise error
+        total_loss += loss.item()
+        pred = torch.round(out)
+        pred = pred.long().float()
+        n_val_nodes += len(data.y)
+        correct += int(pred.eq(data.y).sum().item())
+    acc = correct / n_val_nodes
+    hist.add_vl(total_loss/len(val_dataset))
+    is_best = hist.add_valid_acc(acc)
+    # Save the model if is best
+    if is_best:
+        if not os.path.exists("checkpoint"):
+            os.mkdir("checkpoint")
+        file_path = os.path.join("checkpoint",  "m_"+str(save_id)+"_"+str(acc)+".pt")
+        save_model(model, file_path)
+        save_id += 1
+        print(f'Save model at Loss: {total_loss /len(val_dataset):.4f}, Accuracy: {acc:.4f}')
+    return total_loss/len(val_dataset), acc
 
-def save_model(m_model, PATH):
-    torch.save(m_model.state_dict(), PATH)
+def test(model, test_datase, device): # For test, the input data is WHOLE TEST DATASET.
+    model.eval()
+    correct, nop_correct, n_test_nodes = 0, 0, 0
+    for data in test_dataset:
+        data = data.to(device)
+        pred = model(data.x, data.edge_index)
+        pred = torch.round(pred)
+        pred = pred.long()
+        pred = pred.float()
+        n_test_nodes += len(data.y)
+        correct += int(pred.eq(data.y).sum().item())
+        nop_correct += data.x.T[0].eq(data.y).sum().item()
+    nop_acc = nop_correct / n_test_nodes
+    acc = correct / n_test_nodes
+    print('No operation accurarcy (difference between feature and label): {:.4f}'.format(nop_acc))
+    print('Accuracy: {:.4f}'.format(acc))
 
-def load_model(PATH):
-    m_model = Net(dataset.num_node_features, 30, 2).to(device)
-    m_model.load_state_dict(torch.load(PATH))
-    return m_model
-
+##################### Main function ####################
 device = torch.device('cpu')
 model = Net(dataset.num_node_features, 30, 2).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
-model.train()
-
-####################### Model Training #############################
-hist = history()
-for n_iter in range(epoch):
-    if n_iter % val_freq == val_freq-1:  # Do validation, turn mode to evaluation
-        model.eval()
-        total_loss = 0
-        correct, n_val_nodes = 0, 0
-        for data in val_loader:
-            data = data.to(device)
-            out = model(data.x, data.edge_index)
-            try:
-                loss = F.mse_loss(out, data.y, reduction='mean')
-            except Exception as error:
-                raise error
-            total_loss += float(loss)
-            pred = torch.round(out)
-            pred = pred.long().float()
-            n_val_nodes += len(data.y)
-            correct += int(pred.eq(data.y).sum().item())
-        acc = correct / n_val_nodes
-        print(f'#VALIDATION# Epoch: {n_iter:03d}, Loss: {total_loss:.4f}, Accuracy: {acc:.4f}')
-        is_best = hist.add_vl(total_loss/batch_size)
-        hist.add_valid_acc(acc)
-        # Save the model if is best
-        if is_best:
-            if not os.path.exists("checkpoint"):
-                os.mkdir("checkpoint")
-            file_path = os.path.join("checkpoint", str(n_iter)+".pt")
-            save_model(model, file_path)
-    else:  # Do training, turn mode to train
-        optimizer.zero_grad()
-        model.train()
-        total_loss = 0
-        for data in train_loader:
-            data = data.to(device)
-            out = model(data.x, data.edge_index)
-            try:
-                loss = F.mse_loss(out, data.y, reduction='mean')
-            except Exception as error:
-                raise error
-            total_loss += float(loss)
-            loss.backward()
-            optimizer.step()
-        print(f'Epoch: {n_iter:03d}, Loss: {total_loss:.4f}')
-        hist.add_tl(total_loss/batch_size)
-hist.plot_hist()
-
+save_id = 0
 ####################### Model Testing #############################
-model.eval()
-correct, nop_correct, n_test_nodes = 0, 0, 0
-for data in test_dataset:
-    data = data.to(device)
-    pred = model(data.x, data.edge_index)
-    pred = torch.round(pred)
-    pred = pred.long()
-    pred = pred.float()
-    n_test_nodes += len(data.y)
-    correct += int(pred.eq(data.y).sum().item())
-    nop_correct += data.x.T[0].eq(data.y).sum().item()
-nop_acc = nop_correct / n_test_nodes
-acc = correct / n_test_nodes
-print('No operation accurarcy (difference between feature and label): {:.4f}'.format(nop_acc))
-print('Accuracy: {:.4f}'.format(acc))
+hist = history()
+for i in range(epoch):
+    if (i % val_freq):
+        loss = 0
+        # For whole train set do training
+        for data in train_loader:
+            # For each batch do training
+            loss += train(model, data, device, optimizer)   
+        print("Epoch %d, Loss %.6f" % (i, loss)) 
+        hist.add_tl(loss/len(train_loader))
+    else:
+        # For whole validation set do training
+        loss, acc = validation(model, val_dataset, device)
+        print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc)) 
+        
+hist.plot_hist()  
 
-
+test(model,test_dataset, device)
