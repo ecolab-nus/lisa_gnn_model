@@ -37,15 +37,15 @@ path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
 
 ####################### Parameter Setting ###################################
-val_freq = 1  # Do validation for every [val_freq] epochs
+val_freq = 10  # Do validation for every [val_freq] epochs
 # 'label_indicator' indicates which features to use as train label
 # 0: schedule order,
 # 1: communication
 # 2: start node distance
 # 3: neighbour distance
-label_indicator = [1]
-batch_size = 100
-epoch = 200
+label_indicator = [3]
+batch_size = 10
+epoch = 6000
 
 ####################### Dataset Loading ######################################
 dataset = dfg_dataset(data_path, label_indicator)
@@ -258,7 +258,7 @@ def validation(model, val_dataset, device): # For validation, the input data is 
 
 def test(model, test_datase, device): # For test, the input data is WHOLE TEST DATASET.
     model.eval()
-    correct, nop_correct, n_test_nodes = 0, 0, 0
+    correct, n_test_nodes = 0, 0
     for data in test_dataset:
         data = data.to(device)
         pred = model(data.x, data.edge_index)
@@ -267,10 +267,7 @@ def test(model, test_datase, device): # For test, the input data is WHOLE TEST D
         pred = pred.float()
         n_test_nodes += len(data.y)
         correct += int(pred.eq(data.y).sum().item())
-        nop_correct += data.x.T[0].eq(data.y).sum().item()
-    nop_acc = nop_correct / n_test_nodes
     acc = correct / n_test_nodes
-    print('No operation accurarcy (difference between feature and label): {:.4f}'.format(nop_acc))
     print('Accuracy: {:.4f}'.format(acc))
 
 ##################### Main function ####################

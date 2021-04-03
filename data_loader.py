@@ -7,7 +7,7 @@ import numpy as np
 from torch_geometric.utils import contains_self_loops
 from torch_geometric.utils import degree
 
-def load_data(graph_dir, label_dir, id_labels):
+def load_data(graph_dir, label_dir, id_labels, graph_files):
     """
     Function:
         Load data set into a list of torch_geometric.data.Data objects
@@ -19,11 +19,7 @@ def load_data(graph_dir, label_dir, id_labels):
         list of torch_geometric.data.Data objects
     """
     dataset = []
-    graph_files = os.listdir(graph_dir)
     for file in graph_files:
-        print(file)
-        if not re.search("[0-9]+\.txt", file):
-            continue
         # Get edge data
         edge = []
         f_graph = open(os.path.join(graph_dir, file), 'r')
@@ -60,7 +56,7 @@ def load_data(graph_dir, label_dir, id_labels):
             y.append(np.zeros(num_node))
         for line in f_label:
             # Jump if current line is a seperator line or the label is not wanted.
-            if line == "###":
+            if line == "###\n":
                 current_idx += 1
                 jump = (current_idx not in id_labels)
                 if not jump:
@@ -90,8 +86,9 @@ def load_data(graph_dir, label_dir, id_labels):
             elif current_idx == 3:  # Neighbour distance
                 a, b, c, d = line.strip().split()
                 y[start_loc][int(a)][int(b)] = [int(c), int(d)]
-        if len(id_labels) == 0:  # If only one label is used, remove the outermost dimension as the length of outermost dimension is 1
+        if len(id_labels) == 1:  # If only one label is used, remove the outermost dimension as the length of outermost dimension is 1
             y = y[0]
+        print(y)
         y = torch.tensor(y, dtype=torch.float)
         f_label.close()
 
@@ -115,8 +112,8 @@ class dfg_dataset(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        # graph_files = [os.path.join("graph", str(i)+'.txt') for i in range(self.num_data)]
-        graph_files = ['10.txt']
+        graph_files = os.listdir(os.path.join(self.raw_dir, "label"))  # Available graph data are those with labels, so use label file name as available graph file name
+        graph_files = [x for x in graph_files if x[-3:] == "txt"]
         return graph_files
 
     @property
@@ -128,7 +125,7 @@ class dfg_dataset(InMemoryDataset):
 
     def process(self):
         # Read data into huge `Data` list.
-        data_list = load_data(os.path.join(self.raw_dir, "graph"), os.path.join(self.raw_dir, "label"), self.id_labels)
+        data_list = load_data(os.path.join(self.raw_dir, "graph"), os.path.join(self.raw_dir, "label"), self.id_labels, self.raw_file_names)
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
 
