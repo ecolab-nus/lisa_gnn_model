@@ -38,10 +38,10 @@ data_path = os.path.join(path.parent, 'data')
 
 ####################### Parameter Setting ###################################
 val_freq = 30  # Do validation for every [val_freq] epochs
-num_graphs = 10000  # number of graphs to load into whole dataset
+num_graphs = 100  # number of graphs to load into whole dataset
 label_indicator = 0  # indicate which column to use as training label
 batch_size = 100
-epoch = 200
+epoch = 6000
 
 ####################### Dataset Loading ######################################
 dataset = dfg_dataset(data_path, num_graphs, label_indicator)
@@ -266,7 +266,7 @@ def test(model, test_datase, device): # For test, the input data is WHOLE TEST D
         nop_correct += data.x.T[0].eq(data.y).sum().item()
     nop_acc = nop_correct / n_test_nodes
     acc = correct / n_test_nodes
-    print('No operation accurarcy (difference between feature and label): {:.4f}'.format(nop_acc))
+    print('No operation accuracy (difference between feature and label): {:.4f}'.format(nop_acc))
     print('Accuracy: {:.4f}'.format(acc))
 
 ##################### Main function ####################
