@@ -43,7 +43,7 @@ val_freq = 10  # Do validation for every [val_freq] epochs
 # 1: communication
 # 2: start node distance
 # 3: neighbour distance
-label_indicator = [3]
+label_indicator = [3]  # TODO change the list to a single number as only one label will be used
 batch_size = 10
 epoch = 6000
 
@@ -230,6 +230,7 @@ def validation(model, val_dataset, device): # For validation, the input data is 
     global save_id
     total_loss = 0
     correct, n_val_nodes = 0, 0
+    # TODO Change the accuracy calculation formular
     for data in val_dataset:
         # print(data.num_graphs)
         data = data.to(device)
@@ -256,9 +257,10 @@ def validation(model, val_dataset, device): # For validation, the input data is 
         print(f'Save model at Loss: {total_loss /len(val_dataset):.4f}, Accuracy: {acc:.4f}')
     return total_loss/len(val_dataset), acc
 
-def test(model, test_datase, device): # For test, the input data is WHOLE TEST DATASET.
+def test(model, test_dataset, device): # For test, the input data is WHOLE TEST DATASET.
     model.eval()
     correct, n_test_nodes = 0, 0
+    # TODO Change the accuracy calculation formulare
     for data in test_dataset:
         data = data.to(device)
         pred = model(data.x, data.edge_index)
@@ -293,4 +295,4 @@ for i in range(epoch):
         
 hist.plot_hist()  
 
-test(model,test_dataset, device)
+test(model, test_dataset, device)
