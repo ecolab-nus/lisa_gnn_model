@@ -37,14 +37,18 @@ path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
 
 ####################### Parameter Setting ###################################
-val_freq = 30  # Do validation for every [val_freq] epochs
-num_graphs = 10000  # number of graphs to load into whole dataset
-label_indicator = 0  # indicate which column to use as training label
+val_freq = 1  # Do validation for every [val_freq] epochs
+# 'label_indicator' indicates which features to use as train label
+# 0: schedule order,
+# 1: communication
+# 2: start node distance
+# 3: neighbour distance
+label_indicator = [1]
 batch_size = 100
 epoch = 200
 
 ####################### Dataset Loading ######################################
-dataset = dfg_dataset(data_path, num_graphs, label_indicator)
+dataset = dfg_dataset(data_path, label_indicator)
 dataset = dataset.shuffle()
 
 ####################### Data loader for minibatch #############################
