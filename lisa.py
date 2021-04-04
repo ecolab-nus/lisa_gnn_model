@@ -37,6 +37,7 @@ path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
 
 ####################### Parameter Setting ###################################
+
 val_freq = 10  # Do validation for every [val_freq] epochs
 # 'label_indicator' indicates which features to use as train label
 # 0: schedule order,
@@ -45,6 +46,7 @@ val_freq = 10  # Do validation for every [val_freq] epochs
 # 3: neighbour distance
 label_indicator = [3]  # TODO change the list to a single number as only one label will be used
 batch_size = 10
+
 epoch = 6000
 
 ####################### Dataset Loading ######################################
@@ -271,6 +273,9 @@ def test(model, test_dataset, device): # For test, the input data is WHOLE TEST 
         n_test_nodes += torch.numel(data.y)
         correct += int(pred.eq(y).sum().item())
     acc = correct / n_test_nodes
+
+#     print('No operation accuracy (difference between feature and label): {:.4f}'.format(nop_acc))
+
     print('Accuracy: {:.4f}'.format(acc))
 
 ##################### Main function ####################
