@@ -241,9 +241,10 @@ def validation(model, val_dataset, device): # For validation, the input data is 
             raise error
         total_loss += loss.item()
         pred = torch.round(out)
-        pred = pred.long().float()
-        n_val_nodes += len(data.y)
-        correct += int(pred.eq(data.y).sum().item())
+        pred = pred.long().float().flatten()
+        y = data.y.flatten()
+        n_val_nodes += torch.numel(data.y)
+        correct += int(pred.eq(y).sum().item())
     acc = correct / n_val_nodes
     hist.add_vl(total_loss/len(val_dataset))
     is_best = hist.add_valid_acc(acc)
@@ -265,10 +266,10 @@ def test(model, test_dataset, device): # For test, the input data is WHOLE TEST 
         data = data.to(device)
         pred = model(data.x, data.edge_index)
         pred = torch.round(pred)
-        pred = pred.long()
-        pred = pred.float()
-        n_test_nodes += len(data.y)
-        correct += int(pred.eq(data.y).sum().item())
+        pred = pred.long().float().flatten()
+        y = data.y.flatten()
+        n_test_nodes += torch.numel(data.y)
+        correct += int(pred.eq(y).sum().item())
     acc = correct / n_test_nodes
     print('Accuracy: {:.4f}'.format(acc))
 
