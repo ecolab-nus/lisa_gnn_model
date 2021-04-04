@@ -37,14 +37,20 @@ path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
 
 ####################### Parameter Setting ###################################
-val_freq = 30  # Do validation for every [val_freq] epochs
-num_graphs = 100  # number of graphs to load into whole dataset
-label_indicator = 0  # indicate which column to use as training label
-batch_size = 100
+
+val_freq = 10  # Do validation for every [val_freq] epochs
+# 'label_indicator' indicates which features to use as train label
+# 0: schedule order,
+# 1: communication
+# 2: start node distance
+# 3: neighbour distance
+label_indicator = [3]  # TODO change the list to a single number as only one label will be used
+batch_size = 10
+
 epoch = 6000
 
 ####################### Dataset Loading ######################################
-dataset = dfg_dataset(data_path, num_graphs, label_indicator)
+dataset = dfg_dataset(data_path, label_indicator)
 dataset = dataset.shuffle()
 
 ####################### Data loader for minibatch #############################
@@ -226,6 +232,7 @@ def validation(model, val_dataset, device): # For validation, the input data is 
     global save_id
     total_loss = 0
     correct, n_val_nodes = 0, 0
+    # TODO Change the accuracy calculation formular
     for data in val_dataset:
         # print(data.num_graphs)
         data = data.to(device)
@@ -236,9 +243,10 @@ def validation(model, val_dataset, device): # For validation, the input data is 
             raise error
         total_loss += loss.item()
         pred = torch.round(out)
-        pred = pred.long().float()
-        n_val_nodes += len(data.y)
-        correct += int(pred.eq(data.y).sum().item())
+        pred = pred.long().float().flatten()
+        y = data.y.flatten()
+        n_val_nodes += torch.numel(data.y)
+        correct += int(pred.eq(y).sum().item())
     acc = correct / n_val_nodes
     hist.add_vl(total_loss/len(val_dataset))
     is_best = hist.add_valid_acc(acc)
@@ -252,21 +260,22 @@ def validation(model, val_dataset, device): # For validation, the input data is 
         print(f'Save model at Loss: {total_loss /len(val_dataset):.4f}, Accuracy: {acc:.4f}')
     return total_loss/len(val_dataset), acc
 
-def test(model, test_datase, device): # For test, the input data is WHOLE TEST DATASET.
+def test(model, test_dataset, device): # For test, the input data is WHOLE TEST DATASET.
     model.eval()
-    correct, nop_correct, n_test_nodes = 0, 0, 0
+    correct, n_test_nodes = 0, 0
+    # TODO Change the accuracy calculation formulare
     for data in test_dataset:
         data = data.to(device)
         pred = model(data.x, data.edge_index)
         pred = torch.round(pred)
-        pred = pred.long()
-        pred = pred.float()
-        n_test_nodes += len(data.y)
-        correct += int(pred.eq(data.y).sum().item())
-        nop_correct += data.x.T[0].eq(data.y).sum().item()
-    nop_acc = nop_correct / n_test_nodes
+        pred = pred.long().float().flatten()
+        y = data.y.flatten()
+        n_test_nodes += torch.numel(data.y)
+        correct += int(pred.eq(y).sum().item())
     acc = correct / n_test_nodes
-    print('No operation accuracy (difference between feature and label): {:.4f}'.format(nop_acc))
+
+#     print('No operation accuracy (difference between feature and label): {:.4f}'.format(nop_acc))
+
     print('Accuracy: {:.4f}'.format(acc))
 
 ##################### Main function ####################
@@ -292,4 +301,4 @@ for i in range(epoch):
         
 hist.plot_hist()  
 
-test(model,test_dataset, device)
+test(model, test_dataset, device)
