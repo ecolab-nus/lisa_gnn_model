@@ -37,15 +37,15 @@ path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent, 'data')
 
 ####################### Parameter Setting ###################################
-val_freq = 10  # Do validation for every [val_freq] epochs
+val_freq = 50  # Do validation for every [val_freq] epochs
 # 'label_indicator' indicates which features to use as train label
 # 0: schedule order,
 # 1: communication
 # 2: start node distance
 # 3: neighbour distance
-label_indicator = [3]  # TODO change the list to a single number as only one label will be used
+label_indicator = 2
 batch_size = 10
-epoch = 6000
+epoch = 100
 
 ####################### Dataset Loading ######################################
 dataset = dfg_dataset(data_path, label_indicator)
@@ -149,7 +149,8 @@ class LISAConv(MessagePassing):
 
         self.lin_l = Linear(in_channels[0], out_channels, bias=True)
         # self.lin_r = Linear(in_channels[1], out_channels, bias=True)
-        self.lin_f = Linear(1, 1, bias=True)
+        # self.lin_f = Linear(1, 1, bias=True)
+        self.lin_f = Linear(out_channels, out_channels, bias=True)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -198,10 +199,12 @@ class Net(torch.nn.Module):
         self.convs = nn.ModuleList()
         for i in range(num_layers):
             # in_channels = in_channels if i == 0 else 1
-            out_channels = 1 if i == num_layers - 1 else 1
+            # out_channels = 1 if i == num_layers - 1 else 1
+            out_channels = 3
             self.convs.append(LISAConv(1, out_channels, normalize=False))
 
-    def forward(self, x, adjs):
+    def forward(self, x, adjs, input):
+        # TODO Here is just a template
         # print("adjs", adjs)
         for i, conv in enumerate(self.convs):
             x = conv(x, adjs)
@@ -210,19 +213,22 @@ class Net(torch.nn.Module):
                 x = F.dropout(x, p=0.5, training=self.training)
             # print("x",i, x)
         x = torch.flatten(x)
-        return x
+        out = torch.sum(x).reshape((1))
+        return out
 
 def train(model, data, device, optimizer): # For training, the input data is a BATCH DATA iterated from DATALOADER.
     model.train()
     optimizer.zero_grad()
     data = data.to(device)
-    out = model(data.x, data.edge_index)
-    try:
-        loss = F.mse_loss(out, data.y, reduction='mean')
-    except Exception as error:
-        raise error
-    loss.backward()
-    optimizer.step()
+    y = torch.reshape(data.y, (-1, 3))
+    for i in range(len(y)):
+        out = model(data.x, data.edge_index, y[i][:2])
+        try:
+            loss = F.mse_loss(out, y[i][2:], reduction='mean')
+        except Exception as error:
+            raise error
+        loss.backward()
+        optimizer.step()
     return loss/data.num_graphs
     
 def validation(model, val_dataset, device): # For validation, the input data is WHOLE VALIDATION DATASET.
@@ -230,21 +236,21 @@ def validation(model, val_dataset, device): # For validation, the input data is 
     global save_id
     total_loss = 0
     correct, n_val_nodes = 0, 0
-    # TODO Change the accuracy calculation formular
     for data in val_dataset:
         # print(data.num_graphs)
         data = data.to(device)
-        out = model(data.x, data.edge_index)
-        try:
-            loss = F.mse_loss(out, data.y, reduction='mean')
-        except Exception as error:
-            raise error
-        total_loss += loss.item()
-        pred = torch.round(out)
-        pred = pred.long().float().flatten()
-        y = data.y.flatten()
-        n_val_nodes += torch.numel(data.y)
-        correct += int(pred.eq(y).sum().item())
+        for i in range(len(data.y)):
+            out = model(data.x, data.edge_index, data.y[i][:2])
+            try:
+                loss = F.mse_loss(out, data.y[i][2], reduction='mean')
+            except Exception as error:
+                raise error
+            total_loss += loss.item()
+            pred = torch.round(out)
+            pred = pred.long().float().flatten()
+            y = data.y[i][2]
+            n_val_nodes += torch.numel(data.y[i][2])
+            correct += int(pred.eq(y).sum().item())
     acc = correct / n_val_nodes
     hist.add_vl(total_loss/len(val_dataset))
     is_best = hist.add_valid_acc(acc)
@@ -258,20 +264,20 @@ def validation(model, val_dataset, device): # For validation, the input data is 
         print(f'Save model at Loss: {total_loss /len(val_dataset):.4f}, Accuracy: {acc:.4f}')
     return total_loss/len(val_dataset), acc
 
-def test(model, test_dataset, device): # For test, the input data is WHOLE TEST DATASET.
-    model.eval()
-    correct, n_test_nodes = 0, 0
-    # TODO Change the accuracy calculation formulare
-    for data in test_dataset:
-        data = data.to(device)
-        pred = model(data.x, data.edge_index)
-        pred = torch.round(pred)
-        pred = pred.long().float().flatten()
-        y = data.y.flatten()
-        n_test_nodes += torch.numel(data.y)
-        correct += int(pred.eq(y).sum().item())
-    acc = correct / n_test_nodes
-    print('Accuracy: {:.4f}'.format(acc))
+# def test(model, test_dataset, device): # For test, the input data is WHOLE TEST DATASET.
+#     model.eval()
+#     correct, n_test_nodes = 0, 0
+#     # TODO Change the accuracy calculation formulare
+#     for data in test_dataset:
+#         data = data.to(device)
+#         pred = model(data.x, data.edge_index)
+#         pred = torch.round(pred)
+#         pred = pred.long().float().flatten()
+#         y = data.y.flatten()
+#         n_test_nodes += torch.numel(data.y)
+#         correct += int(pred.eq(y).sum().item())
+#     acc = correct / n_test_nodes
+#     print('Accuracy: {:.4f}'.format(acc))
 
 ##################### Main function ####################
 device = torch.device('cpu')
@@ -280,20 +286,26 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
 save_id = 0
 ####################### Model Testing #############################
 hist = history()
+# for i in range(epoch):
+#     if (i % val_freq):
+#         loss = 0
+#         # For whole train set do training
+#         for data in train_loader:
+#             # For each batch do training
+#             loss += train(model, data, device, optimizer)
+#         print("Epoch %d, Loss %.6f" % (i, loss))
+#         hist.add_tl(loss/len(train_loader))
+#     else:
+#         # For whole validation set do training
+#         loss, acc = validation(model, val_dataset, device)
+#         print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc))
+#
+# hist.plot_hist()
 for i in range(epoch):
-    if (i % val_freq):
-        loss = 0
-        # For whole train set do training
-        for data in train_loader:
-            # For each batch do training
-            loss += train(model, data, device, optimizer)   
-        print("Epoch %d, Loss %.6f" % (i, loss)) 
-        hist.add_tl(loss/len(train_loader))
-    else:
-        # For whole validation set do training
-        loss, acc = validation(model, val_dataset, device)
-        print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc)) 
-        
-hist.plot_hist()  
-
-test(model, test_dataset, device)
+    loss = 0
+    # For whole train set do training
+    for data in train_loader:
+        # For each batch do training
+        loss += train(model, data, device, optimizer)
+    print("Epoch %d, Loss %.6f" % (i, loss))
+# test(model, test_dataset, device)
