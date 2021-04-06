@@ -302,6 +302,9 @@ for i in range(epoch):
 hist.plot_hist()
 
 test(model, test_dataset, device)
+file_path = os.path.join("checkpoint", "final_model.pt")
+save_model(model, file_path)
+print(f'Save the final model!')
 
 # !!!! Remove the preprocessed folder AUTOMATICALLY!!!
 processed = os.path.join(data_path, 'processed')
