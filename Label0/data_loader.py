@@ -7,14 +7,14 @@ import numpy as np
 from torch_geometric.utils import contains_self_loops
 from torch_geometric.utils import degree
 
-def load_data(graph_dir, label_dir, id_labels, graph_files):
+def load_data(graph_dir, label_dir, id_label, graph_files):
     """
     Function:
         Load data set into a list of torch_geometric.data.Data objects
     Params:
         graph_dir: str, directory to the graph (edge) information,
         label_dir: str, directory to the label information,
-        id_labels: array of int, index of label.
+        id_label: int, index of label.
     Return:
         list of torch_geometric.data.Data objects
     """
@@ -46,54 +46,40 @@ def load_data(graph_dir, label_dir, id_labels, graph_files):
         f_feat.close()
 
         # Get label data
-        y = []
         f_label = open(os.path.join(label_dir, file), 'r')
-        # Some initialization + preparation if the first label is used
-        current_idx = 0  # Indicate which label is reading
-        jump = (current_idx not in id_labels)  # whether we should skip these lines belonging to the same type of label
-        start_loc = len(y)
-        if not jump:  # The first label is used, initialize the space for feature
-            y.append(np.zeros(num_node))
-        for line in f_label:
-            # Jump if current line is a seperator line or the label is not wanted.
-            if line == "###\n":
-                current_idx += 1
-                jump = (current_idx not in id_labels)
-                if not jump:
-                    if current_idx == 1:
-                        start_loc = len(y)
-                        y.append(np.zeros(num_node))
-                    if current_idx == 2:
-                        start_loc = len(y)
-                        y.append(np.zeros((num_node, num_node)))
-                    if current_idx == 3:
-                        start_loc = len(y)
-                        y.append(np.zeros((num_node, num_node, 2)))
-                continue
-            elif jump:
-                continue
-            # Parse the wanted line for labels
-            if current_idx == 0:  # Schedule Order
-                # Parse the first kind of label
-                a, b = line.strip().split()
-                y[start_loc][int(a)] = int(b)  # Should the id of node written in the label? NO.
-            elif current_idx == 1:  # Communication Value
-                a, b = line.strip().split()
-                y[start_loc][int(a)] = int(b)  # Should the id of node written in the label? NO.
-            elif current_idx == 2:  # Start Node Distance
-                a, b, c = line.strip().split()
-                y[start_loc][int(a)][int(b)] = int(c)
-            elif current_idx == 3:  # Neighbour distance
-                a, b, c, d = line.strip().split()
-                y[start_loc][int(a)][int(b)] = [int(c), int(d)]
-        if len(id_labels) == 1:  # If only one label is used, remove the outermost dimension as the length of outermost dimension is 1
-            y = y[0]
-        print(y)
-        y = torch.tensor(y, dtype=torch.float)
-        f_label.close()
+        if id_label in [0, 1]:  # Schedule Order or Communication Value
+            y = np.zeros(num_node)  # Spare space for labels in case the node is out-of-order
+            current_idx = 0  # Indicate which label is reading
+            for line in f_label:
+                # Jump if current line is a seperator line or the label is not wanted.
+                if line == "###\n":
+                    current_idx += 1
+                    continue
+                # Parse the wanted line for labels
+                if current_idx == id_label:  # We need to
+                    a, b = line.strip().split()
+                    y[int(a)] = int(b)  # Should the id of node written in the label? NO.
+            print(y)
+            y = torch.tensor(y, dtype=torch.float)
+            data = Data(x=x, edge_index=edge_index, y=y)
+            dataset.append(data)
 
-        data = Data(x=x, edge_index=edge_index, y=y)
-        dataset.append(data)
+        else:  # Start Node Distance or Neighbour distance
+            current_idx = 0  # Indicate which label is reading
+            for line in f_label:
+                # Jump if current line is a seperator line or the label is not wanted.
+                if line == "###\n":
+                    current_idx += 1
+                    continue
+                # Parse the wanted line for labels
+                if current_idx == id_label:
+                    tmp = line.strip().split()
+                    y = [int(x) for x in tmp]  # Use the graph information to predict only one line of data
+                    print(y)
+                    y = torch.tensor(y, dtype=torch.float)
+                    data = Data(x=x, edge_index=edge_index, y=y)
+                    dataset.append(data)
+        f_label.close()
     return dataset
 
 class dfg_dataset(InMemoryDataset):
