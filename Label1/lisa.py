@@ -1,10 +1,11 @@
 import sys
-
+sys.path.append('../')
 sys.path.append('../../dfg_generator')
 sys.path.append('../../dfg_generator/dfg')
 sys.path.append('../../dfg_generator/graph_generation')
 
 from data_loader import dfg_dataset
+from history import history
 
 import os
 import torch
@@ -63,47 +64,6 @@ val_loader = DataLoader(val_dataset, batch_size=batch_size)
 train_loader = DataLoader(train_dataset, batch_size=batch_size)
 
 
-class history():
-    def __init__(self):
-        self.train_loss = []
-        self.valid_loss = []
-        self.valid_acc = []
-        self.best_val_acc = 0
-
-    def add_tl(self, loss):  # add train loss (average for each graph, so that the batch size doesn't matter)
-        self.train_loss.append(loss)
-        # Don't save the model during training, otherwise too many "saving" at the beginning
-
-    def add_vl(self, loss):  # add validation loss
-        self.valid_loss.append(loss)
-
-    def add_valid_acc(self, acc):
-        self.valid_acc.append(acc)
-        if acc >= self.best_val_acc:
-            self.best_val_acc = acc
-            return True
-        else:
-            return False
-
-    def plot_hist(self):
-        fig, ax = plt.subplots()  # Create a figure containing a single axes.
-        ax.plot(range(len(self.train_loss)), self.train_loss, label="train")
-        ax.plot([val_freq * x for x in range(len(self.valid_loss))], self.valid_loss, label="validation")
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("Avg Loss per graph")
-        ax.set_title("Loss History")
-        ax.legend()
-        print("Save to loss_history.jpg")
-        plt.savefig("loss_history.jpg")
-
-        fig2, ax2 = plt.subplots()  # Create a figure containing a single axes.
-        ax2.plot([val_freq * x for x in range(len(self.valid_acc))], self.valid_acc, label="validation")
-        ax2.set_xlabel("Epoch")
-        ax2.set_ylabel("Accuracy")
-        ax2.set_title("Accuracy History")
-        ax2.legend()
-        print("Save to acc_history.jpg")
-        plt.savefig("acc_history.jpg")
 
 def save_model(m_model, PATH):
     torch.save(m_model.state_dict(), PATH)
@@ -113,32 +73,13 @@ def load_model(PATH):
     m_model.load_state_dict(torch.load(PATH))
     return m_model
 
-class LISAConv(MessagePassing):
-    """The GraphSAGE operator from the `"Inductive Representation Learning on
-    Large Graphs" <https://arxiv.org/abs/1706.02216>`_ paper
-    .. math::
-        \mathbf{x}^{\prime}_i = \mathbf{W}_1 \mathbf{x}_i + \mathbf{W_2} \cdot
-        \mathrm{mean}_{j \in \mathcal{N(i)}} \mathbf{x}_j
-    Args:
-        in_channels (int or tuple): Size of each input sample. A tuple
-            corresponds to the sizes of source and target dimensionalities.
-        out_channels (int): Size of each output sample.
-        normalize (bool, optional): If set to :obj:`True`, output features
-            will be :math:`\ell_2`-normalized, *i.e.*,
-            :math:`\frac{\mathbf{x}^{\prime}_i}
-            {\| \mathbf{x}^{\prime}_i \|_2}`.
-            (default: :obj:`False`)
-        bias (bool, optional): If set to :obj:`False`, the layer will not learn
-            an additive bias. (default: :obj:`True`)
-        **kwargs (optional): Additional arguments of
-            :class:`torch_geometric.nn.conv.MessagePassing`.
-    """
+class LISACommConv(MessagePassing):
 
     def __init__(self, in_channels: Union[int, Tuple[int, int]],
                  out_channels: int, normalize: bool = False,
                  bias: bool = True, **kwargs):  # yapf: disable
         kwargs.setdefault('aggr', None)
-        super(LISAConv, self).__init__(**kwargs)
+        super(LISACommConv, self).__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -199,8 +140,8 @@ class Net(torch.nn.Module):
         self.convs = nn.ModuleList()
         for i in range(num_layers):
             # in_channels = in_channels if i == 0 else 1
-            out_channels = 1 if i == num_layers - 1 else 1
-            self.convs.append(LISAConv(1, out_channels, normalize=False))
+            out_channels = 1 
+            self.convs.append(LISACommConv(1, out_channels, normalize=False))
 
     def forward(self, x, adjs):
         for i, conv in enumerate(self.convs):

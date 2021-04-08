@@ -1,10 +1,11 @@
 import sys
-
+sys.path.append('../')
 sys.path.append('../../dfg_generator')
 sys.path.append('../../dfg_generator/dfg')
 sys.path.append('../../dfg_generator/graph_generation')
 
 from data_loader import dfg_dataset
+from history import history
 
 import os
 import torch
@@ -23,7 +24,8 @@ from torch_geometric.nn.conv import MessagePassing
 import torch.nn as nn
 from torch_cluster import random_walk
 from sklearn.linear_model import LogisticRegression
-
+from torch_geometric.utils import to_undirected
+from torch_scatter import gather_csr, scatter, segment_csr
 import torch_geometric.transforms as T
 from torch_geometric.nn import SAGEConv
 from torch_geometric.datasets import Planetoid
@@ -38,7 +40,7 @@ path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent.parent, 'data')
 
 ####################### Parameter Setting ###################################
-val_freq = 50  # Do validation for every [val_freq] epochs
+val_freq = 20  # Do validation for every [val_freq] epochs
 # 'label_indicator' indicates which features to use as train label
 # 0: schedule order,
 # 1: communication
@@ -46,7 +48,7 @@ val_freq = 50  # Do validation for every [val_freq] epochs
 # 3: neighbour distance
 label_indicator = 0
 batch_size = 10
-epoch = 100
+epoch = 1000
 
 ####################### Dataset Loading ######################################
 dataset = dfg_dataset(data_path, label_indicator)
@@ -62,48 +64,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size)
 val_loader = DataLoader(val_dataset, batch_size=batch_size)
 train_loader = DataLoader(train_dataset, batch_size=batch_size)
 
-
-class history():
-    def __init__(self):
-        self.train_loss = []
-        self.valid_loss = []
-        self.valid_acc = []
-        self.best_val_acc = 0
-
-    def add_tl(self, loss):  # add train loss (average for each graph, so that the batch size doesn't matter)
-        self.train_loss.append(loss)
-        # Don't save the model during training, otherwise too many "saving" at the beginning
-
-    def add_vl(self, loss):  # add validation loss
-        self.valid_loss.append(loss)
-
-    def add_valid_acc(self, acc):
-        self.valid_acc.append(acc)
-        if acc >= self.best_val_acc:
-            self.best_val_acc = acc
-            return True
-        else:
-            return False
-
-    def plot_hist(self):
-        fig, ax = plt.subplots()  # Create a figure containing a single axes.
-        ax.plot(range(len(self.train_loss)), self.train_loss, label="train")
-        ax.plot([val_freq * x for x in range(len(self.valid_loss))], self.valid_loss, label="validation")
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("Avg Loss per graph")
-        ax.set_title("Loss History")
-        ax.legend()
-        print("Save to loss_history.jpg")
-        plt.savefig("loss_history.jpg")
-
-        fig2, ax2 = plt.subplots()  # Create a figure containing a single axes.
-        ax2.plot([val_freq * x for x in range(len(self.valid_acc))], self.valid_acc, label="validation")
-        ax2.set_xlabel("Epoch")
-        ax2.set_ylabel("Accuracy")
-        ax2.set_title("Accuracy History")
-        ax2.legend()
-        print("Save to acc_history.jpg")
-        plt.savefig("acc_history.jpg")
+best_acc_model = ""
 
 def save_model(m_model, PATH):
     torch.save(m_model.state_dict(), PATH)
@@ -113,32 +74,13 @@ def load_model(PATH):
     m_model.load_state_dict(torch.load(PATH))
     return m_model
 
-class LISAConv(MessagePassing):
-    """The GraphSAGE operator from the `"Inductive Representation Learning on
-    Large Graphs" <https://arxiv.org/abs/1706.02216>`_ paper
-    .. math::
-        \mathbf{x}^{\prime}_i = \mathbf{W}_1 \mathbf{x}_i + \mathbf{W_2} \cdot
-        \mathrm{mean}_{j \in \mathcal{N(i)}} \mathbf{x}_j
-    Args:
-        in_channels (int or tuple): Size of each input sample. A tuple
-            corresponds to the sizes of source and target dimensionalities.
-        out_channels (int): Size of each output sample.
-        normalize (bool, optional): If set to :obj:`True`, output features
-            will be :math:`\ell_2`-normalized, *i.e.*,
-            :math:`\frac{\mathbf{x}^{\prime}_i}
-            {\| \mathbf{x}^{\prime}_i \|_2}`.
-            (default: :obj:`False`)
-        bias (bool, optional): If set to :obj:`False`, the layer will not learn
-            an additive bias. (default: :obj:`True`)
-        **kwargs (optional): Additional arguments of
-            :class:`torch_geometric.nn.conv.MessagePassing`.
-    """
+class LISASchedConv(MessagePassing):
 
     def __init__(self, in_channels: Union[int, Tuple[int, int]],
                  out_channels: int, normalize: bool = False,
                  bias: bool = True, **kwargs):  # yapf: disable
         kwargs.setdefault('aggr', None)
-        super(LISAConv, self).__init__(**kwargs)
+        super(LISASchedConv, self).__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -148,48 +90,66 @@ class LISAConv(MessagePassing):
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
 
-        self.lin_l = Linear(in_channels[0], out_channels, bias=True)
+       
         # self.lin_r = Linear(in_channels[1], out_channels, bias=True)
-        self.lin_f = Linear(1, 1, bias=True)
+        self.lin_d = Linear(1, 1, bias=True)
+        self.lin_n = Linear(1, 1, bias=True)
+        self.lin_nn = Linear(1, 1, bias=True)
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.lin_l.reset_parameters()
-        # self.lin_r.reset_parameters()
+        self.lin_d.reset_parameters()
+        self.lin_n.reset_parameters()
+        self.lin_nn.reset_parameters()
 
     def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
                 size: Size = None) -> Tensor:
         """"""
+        # print("!!!!!!!!!!!!!!!!")
+        
         if isinstance(x, Tensor):
-            x: OptPairTensor = (x, x)
-        add_self_loops(edge_index, num_nodes=len(x[0]))
-        x_r = x[1]
-        # print("x_r", x_r.size())
-        deg = degree(edge_index[1], num_nodes=len(x[0]))
+            temp_edge_index =  to_undirected(edge_index, len(x))
+            deg = degree(temp_edge_index[0], num_nodes=len(x))
+            deg = deg.clamp_(1).view(-1, 1)
+            x: OptPairTensor = (x, deg)
+        else:
+            temp_edge_index =  to_undirected(edge_index, len(x[0]))
+
+        return self.propagate(x = x, edge_index = temp_edge_index, und_edge_index = temp_edge_index, deg_trans = x[1] )
+
+
+    def aggregate(self, inputs, x: Union[Tensor, OptPairTensor], und_edge_index: Tensor, deg_trans_j: Tensor,) -> Tensor:
+        
+
+        # print("dim size", len(x[0]))
+        # print("und_edge_index[1]", und_edge_index[1].size())
+        # print("deg_trans_j", deg_trans_j.size())
+        deg_trans_j  =deg_trans_j.resize(1, len(deg_trans_j))
+      
+        # print("index", index.size())
+        neigbor_degree_sum = scatter(deg_trans_j, index = und_edge_index[1],  dim_size = len(x[0]),  reduce="sum") 
+        # print("parent_val", parent_val.size(), parent_val)
+        # print("child_val", child_val.size(), child_val)
+        # print("(neigbor_degree_sum", neigbor_degree_sum.size(), neigbor_degree_sum)
+        neigbor_degree_sum = neigbor_degree_sum.resize(len(x[0]), 1)
+        neigbor_degree_sum =  self.lin_nn(neigbor_degree_sum)
+
+        deg = degree(und_edge_index[0], num_nodes=len(x[0]))
         deg = deg.clamp_(1).view(-1, 1)
-        # print("deg", deg.size())
-        out = self.lin_l(deg)
+        deg = self.lin_n(deg)
 
-        # print("out", out.size())
-
-        if x_r is not None:
-            out += x_r
-
-        if self.normalize:
-            out = F.normalize(out, p=2., )
-        # print("out", out.size())
-        lin_f = self.lin_f(out)
-        return out
-
-    def message(self, x_i, x_j, norm):
-        return norm.view(-1, 1) * x_j
-
-    def aggregate(self, inputs: Tensor, x: Union[Tensor, OptPairTensor], index: Tensor) -> Tensor:
-        return inputs
+        neigbor_degree_sum = neigbor_degree_sum.add(deg)
+        
+        # child_val = child_val.resize(len(x[0]), 1)
+        final =  self.lin_d(x[0]).add(neigbor_degree_sum)
+        result: OptPairTensor = (final, neigbor_degree_sum)
+        # print("final", final.size(), final)
+        return result
 
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
                                    self.out_channels)
+
 
 
 class Net(torch.nn.Module):
@@ -199,17 +159,22 @@ class Net(torch.nn.Module):
         self.convs = nn.ModuleList()
         for i in range(num_layers):
             # in_channels = in_channels if i == 0 else 1
-            out_channels = 1 if i == num_layers - 1 else 1
-            self.convs.append(LISAConv(1, out_channels, normalize=False))
+            out_channels = 1 
+            self.convs.append(LISASchedConv(1, out_channels, normalize=False))
 
     def forward(self, x, adjs):
+        # print("adjs", adjs)
+        # print("x", x)
+        x = torch.add(x, -1)
+        x = x * 2
+        x = x.long().float()
         for i, conv in enumerate(self.convs):
             x = conv(x, adjs)
-            if i != self.num_layers - 1:
-                # x = x.relu()
-                x = F.dropout(x, p=0.5, training=self.training)
+            # if i != self.num_layers - 1:
+            #     # x = x.relu()
+            #     x = F.dropout(x, p=0.5, training=self.training)
             # print("x",i, x)
-        x = torch.flatten(x)
+        x = torch.flatten(x[0])
         return x
 
 
@@ -253,7 +218,8 @@ def validation(model, val_dataset, device):  # For validation, the input data is
     if is_best:
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
-        file_path = os.path.join("checkpoint", "m_" + str(save_id) + "_" + str(acc) + ".pt")
+        file_path = os.path.join("checkpoint", "bestacc.pt")
+        best_acc_model = "m_" + str(save_id) + "_" + str(acc) + ".pt"
         save_model(model, file_path)
         save_id += 1
         print(f'Save model at Loss: {total_loss / len(val_dataset):.4f}, Accuracy: {acc:.4f}')
@@ -306,6 +272,12 @@ file_path = os.path.join("checkpoint", "final_model.pt")
 save_model(model, file_path)
 print(f'Save the final model!')
 
+use_check = False
+if use_check:
+    best_acc = os.path.join("checkpoint", "bestacc.pt")
+    model0 = load_model(best_acc)
+    print("Accuracy for checkpoint model:")
+    test(model0, test_dataset, device)
 # !!!! Remove the preprocessed folder AUTOMATICALLY!!!
 processed = os.path.join(data_path, 'processed')
 shutil.rmtree(processed)
