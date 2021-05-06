@@ -1,5 +1,13 @@
 import matplotlib.pyplot as plt
+from torch import Tensor
 
+allow_lisa_print= False
+
+
+
+def lisa_print(input: Tensor, name = ""):
+    if allow_lisa_print:
+        print( name , input.size(), input)
 class history():
     def __init__(self, val_freq = 20):
         self.train_loss = []

@@ -92,33 +92,67 @@ class LISASchedConv(MessagePassing):
 
        
         # self.lin_r = Linear(in_channels[1], out_channels, bias=True)
-        self.lin_d = Linear(1, 1, bias=True)
-        self.lin_n = Linear(1, 1, bias=True)
-        self.lin_nn = Linear(1, 1, bias=True)
+        self.lin_a = Linear(1, 1, bias=False)
+        self.lin_1 = Linear(in_channels[0] - 1, 1, bias=True)
+        self.side_feature = in_channels[0] - 1
+       
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.lin_d.reset_parameters()
-        self.lin_n.reset_parameters()
-        self.lin_nn.reset_parameters()
+        self.lin_a.reset_parameters()
+        self.lin_1.reset_parameters()
+        
 
     def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
                 size: Size = None) -> Tensor:
         """"""
         # print("!!!!!!!!!!!!!!!!")
+        # print("side_feature", self.side_feature)
+        # print("edge", edge_index)
         
         if isinstance(x, Tensor):
-            temp_edge_index =  to_undirected(edge_index, len(x))
-            deg = degree(temp_edge_index[0], num_nodes=len(x))
-            deg = deg.clamp_(1).view(-1, 1)
-            x: OptPairTensor = (x, deg)
-        else:
-            temp_edge_index =  to_undirected(edge_index, len(x[0]))
+            # print("x", x.size())
+            x: OptPairTensor = (x[:, 0], x[:, 1:])
+        
 
-        return self.propagate(x = x, edge_index = temp_edge_index, und_edge_index = temp_edge_index, deg_trans = x[1] )
+        temp_edge_index =  to_undirected(edge_index, len(x[0]) )
+        # print("unedge", temp_edge_index)
 
+        # print("x", x[0].size())
+        # print("x[1]", x[1], x[1].size())
 
-    def aggregate(self, inputs, x: Union[Tensor, OptPairTensor], und_edge_index: Tensor, deg_trans_j: Tensor,) -> Tensor:
+        neigbor_info = self.propagate(x = (x[1], x[1]), edge_index = temp_edge_index,  deg_trans = x[1] )
+        # x [1] = neigbor_info
+         
+        trans_neig  = self.lin_1(neigbor_info)
+        ori  =  x[0].view(-1, 1)
+        result = self.lin_a(ori) + trans_neig
+
+        x: OptPairTensor = (result, trans_neig)
+        
+        return x
+
+    def aggregate(self, inputs, x: Union[Tensor, OptPairTensor],edge_index,  deg_trans_i: Tensor,) -> Tensor:
+        # print("deg_trans_i",deg_trans_i,  deg_trans_i.size())
+        # print("edge_index[1]", edge_index[1], edge_index[1].size())
+        # index  =edge_index[1].resize(1, len(edge_index[1]))
+        index  = torch.zeros(self.side_feature, len(edge_index[0]))
+        for i in range(0, self.side_feature):
+            index [i] =  edge_index[0]
+       
+        deg_trans_i = torch.transpose(deg_trans_i, 0 , 1)
+        index = index.long()
+        # print("index", index, index.size())
+        neigbor_degree_sum = scatter(deg_trans_i, index = index,  dim =1,  reduce="sum") 
+        # neigbor_degree_sum2 = scatter(deg_trans_j[:,1], index = edge_index[1],   reduce="sum") 
+        # neigbor_degree_sum3 = scatter(deg_trans_j[:,2], index = edge_index[1],   reduce="sum") 
+        
+        neigbor_degree_sum = torch.transpose(neigbor_degree_sum, 0, 1)
+        # print("neigbor_degree_sum", neigbor_degree_sum, neigbor_degree_sum.size())
+        return neigbor_degree_sum
+
+        
+    def old_aggregate(self, inputs, x: Union[Tensor, OptPairTensor], und_edge_index: Tensor, deg_trans_j: Tensor,) -> Tensor:
         
 
         # print("dim size", len(x[0]))
@@ -157,16 +191,13 @@ class Net(torch.nn.Module):
         super(Net, self).__init__()
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
-        for i in range(num_layers):
-            # in_channels = in_channels if i == 0 else 1
-            out_channels = 1 
-            self.convs.append(LISASchedConv(1, out_channels, normalize=False))
+       
+        self.convs.append(LISASchedConv(in_channels, 2, normalize=False))
+        self.convs.append(LISASchedConv(2, 2, normalize=False))
 
     def forward(self, x, adjs):
         # print("adjs", adjs)
         # print("x", x)
-        x = torch.add(x, -1)
-        x = x * 2
         x = x.long().float()
         for i, conv in enumerate(self.convs):
             x = conv(x, adjs)
@@ -235,6 +266,7 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
         pred = torch.round(pred)
         pred = pred.long().float().flatten()
         y = data.y.flatten()
+        print("diff ", pred, y)
         n_test_nodes += torch.numel(data.y)
         correct += int(pred.eq(y).sum().item())
     acc = correct / n_test_nodes
@@ -246,6 +278,8 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
 
 ##################### Main function ####################
 device = torch.device('cpu')
+# model = SAGENet(dataset.num_node_features, hidden_channels=64, out_channels= 1, num_layers=2)
+
 model = Net(dataset.num_node_features, 30, 2).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
 save_id = 0
