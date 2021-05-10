@@ -25,6 +25,294 @@ label_feature[0] = [0, 1, 2 ,3, 4]
 label_feature[1] = [5, 6, 0]
 label_feature[2] = [6]
 label_feature[3] = [5, 6, 7]
+
+def get_single_inference_graph_data(graph_dir,  file, id_label):
+    data = Data()
+    edge = []
+    f_graph = open(os.path.join(graph_dir, file), 'r')
+    for line in f_graph:
+        n_out, n_in = line.strip().split()
+        edge.append([int(n_out), int(n_in)])
+    edge = torch.tensor(edge, dtype=torch.long)
+    edge_index = edge.t().contiguous()
+    if contains_self_loops(edge_index):
+        print(edge_index)
+        assert False
+    f_graph.close()
+
+
+    # Get feature data 
+    feat_filename = file[:-4]+"_feature.txt"
+    f_feat = open(os.path.join(graph_dir, feat_filename), 'r')
+    x = []
+    num_node = 0
+    asap = {}
+    num_ancestor = {}
+    num_descendant = {}
+    ## read feature
+    startnode_feature = False
+    start_nodes = {}
+    for line in f_feat:
+        if "###" in line:
+            startnode_feature = True
+            continue
+
+        if not startnode_feature:
+            
+            features = line.strip()
+            features = features.split(" ")
+            # print(features)
+            int_features = []
+            for s in features:
+                int_features.append(int(s))
+            final_features = []
+            for index in label_feature[id_label]:
+                final_features.append(int_features[index])
+
+            asap[num_node] = int_features[0]
+            num_ancestor [num_node] = int_features[5]
+            num_descendant [num_node] = int_features[6]
+                
+            x.append(final_features)
+            num_node += 1
+        else:
+            tmp = line.strip().split()
+            tmp = list(map(int, tmp))
+            start_nodes[(tmp[0], tmp[1])] = tmp[2]
+
+    x = torch.tensor(x, dtype=torch.long)
+    f_feat.close()
+
+
+
+    # print("filename", file)
+    # Get label data
+    if id_label == 0:  # Schedule Order or Communication Value
+        data = Data(x=x, edge_index=edge_index)
+    elif id_label == 1:
+        new_edge_index = []
+        new_edge_index.append([])
+        new_edge_index.append([])
+        edge_attr = []
+        for i   in range(0, len(edge_index[0])):
+            a_node = int(edge_index[0][i])
+            b_node = int(edge_index[1][i])
+            new_edge_index[0].append(a_node)
+            new_edge_index[1].append(b_node)
+
+            #undirectd edge
+            new_edge_index[0].append(b_node)
+            new_edge_index[1].append(a_node)
+            asap_diff = abs (asap[a_node] - asap[b_node])
+            edge_attr.append([asap_diff, num_ancestor[a_node] ])
+            edge_attr.append([asap_diff, num_descendant[b_node] ])
+        # print("new graph\n" , edge_index, edge_attr, y)
+        new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.long)
+        data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr)
+
+    elif id_label == 2:  # Start Node Distance or Neighbour distance
+        current_idx = 0  # Indicate which label is reading
+        new_edge_index = []
+        new_edge_index.append([])
+        new_edge_index.append([])
+        edge_attr = []
+        y = []
+        for node in start_nodes.items():
+            new_edge_index[0].append(node[0][0])
+            new_edge_index[1].append(node[0][1])
+            edge_attr.append([node[1] ])
+                   
+        # print("new graph\n" , edge_index, edge_attr, y)
+        new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.long)
+        data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr)
+    elif id_label == 3:
+        data = Data(x=x, edge_index=edge_index)
+    else:
+        assert(False)
+
+    return data
+   
+
+def get_single_graph_data(graph_dir, label_dir,  file, id_label):
+    data = Data()
+    edge = []
+    f_graph = open(os.path.join(graph_dir, file), 'r')
+    for line in f_graph:
+        n_out, n_in = line.strip().split()
+        edge.append([int(n_out), int(n_in)])
+    edge = torch.tensor(edge, dtype=torch.long)
+    edge_index = edge.t().contiguous()
+    if contains_self_loops(edge_index):
+        print(edge_index)
+        assert False
+    f_graph.close()
+
+
+    # Get feature data 
+    feat_filename = file[:-4]+"_feature.txt"
+    f_feat = open(os.path.join(graph_dir, feat_filename), 'r')
+    x = []
+    num_node = 0
+    asap = {}
+    num_ancestor = {}
+    num_descendant = {}
+    ## read feature
+    startnode_feature = False
+    start_nodes = {}
+    for line in f_feat:
+        if "###" in line:
+            startnode_feature = True
+            continue
+
+        if not startnode_feature:
+            
+            features = line.strip()
+            features = features.split(" ")
+            # print(features)
+            int_features = []
+            for s in features:
+                int_features.append(int(s))
+            final_features = []
+            for index in label_feature[id_label]:
+                final_features.append(int_features[index])
+
+            asap[num_node] = int_features[0]
+            num_ancestor [num_node] = int_features[5]
+            num_descendant [num_node] = int_features[6]
+                
+            x.append(final_features)
+            num_node += 1
+        else:
+            tmp = line.strip().split()
+            tmp = list(map(int, tmp))
+            start_nodes[(tmp[0], tmp[1])] = tmp[2]
+
+    x = torch.tensor(x, dtype=torch.long)
+    f_feat.close()
+
+
+
+    # print("filename", file)
+    # Get label data
+    f_label = open(os.path.join(label_dir, file), 'r')
+    if id_label == 0:  # Schedule Order or Communication Value
+        y = np.zeros(num_node)  # Spare space for labels in case the node is out-of-order
+        current_idx = 0  # Indicate which label is reading
+        for line in f_label:
+            # Jump if current line is a seperator line or the label is not wanted.
+            if line == "###\n":
+                current_idx += 1
+                continue
+            # Parse the wanted line for labels
+            if current_idx == id_label:  # We need to
+                a, b = line.strip().split()
+                y[int(a)] = int(b)  # Should the id of node written in the label? NO.
+        y = torch.tensor(y, dtype=torch.float)
+        data = Data(x=x, edge_index=edge_index, y=y)
+    elif id_label == 1:
+        y = np.zeros(num_node)  # Spare space for labels in case the node is out-of-order
+        current_idx = 0  # Indicate which label is reading
+        for line in f_label:
+            # Jump if current line is a seperator line or the label is not wanted.
+            if line == "###\n":
+                current_idx += 1
+                continue
+            # Parse the wanted line for labels
+            if current_idx == id_label:  # We need to
+                a, b = line.strip().split()
+                y[int(a)] = int(b)  # Should the id of node written in the label? NO.
+        y = torch.tensor(y, dtype=torch.float)
+        new_edge_index = []
+        new_edge_index.append([])
+        new_edge_index.append([])
+        edge_attr = []
+        for i   in range(0, len(edge_index[0])):
+            a_node = int(edge_index[0][i])
+            b_node = int(edge_index[1][i])
+            new_edge_index[0].append(a_node)
+            new_edge_index[1].append(b_node)
+
+            #undirectd edge
+            new_edge_index[0].append(b_node)
+            new_edge_index[1].append(a_node)
+            asap_diff = abs (asap[a_node] - asap[b_node])
+            edge_attr.append([asap_diff, num_ancestor[a_node] ])
+            edge_attr.append([asap_diff, num_descendant[b_node] ])
+        # print("new graph\n" , edge_index, edge_attr, y)
+        new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.long)
+        data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr, y=y)
+
+    elif id_label == 2:  # Start Node Distance or Neighbour distance
+        current_idx = 0  # Indicate which label is reading
+        new_edge_index = []
+        new_edge_index.append([])
+        new_edge_index.append([])
+        edge_attr = []
+        y = []
+        for line in f_label:
+            # Jump if current line is a seperator line or the label is not wanted.
+            if line == "###\n":
+                current_idx += 1
+                continue
+            # Parse the wanted line for labels
+            if current_idx == id_label:
+                tmp = line.strip().split()
+                tmp = list(map(int, tmp))
+                if (tmp[0], tmp[1]) in start_nodes:
+                    new_edge_index[0].append(tmp[0])
+                    new_edge_index[1].append(tmp[1])
+                    edge_attr.append([start_nodes[(tmp[0], tmp[1])]])
+                    y.append(tmp[2])
+
+                elif (tmp[1], tmp[0]) in start_nodes:
+                    new_edge_index[0].append(tmp[1])
+                    new_edge_index[1].append(tmp[0])
+                    edge_attr.append([start_nodes[(tmp[1], tmp[0])]])
+                    y.append(tmp[2])
+                else:
+                    assert(False)
+        # print("new graph\n" , edge_index, edge_attr, y)
+        new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.long)
+        y = torch.tensor(y, dtype=torch.float)
+        data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr, y=y)
+    elif id_label == 3:
+        # neigbor distance
+        current_idx = 0  # Indicate which label is reading
+        edge_info = {}
+        edge_label_num = 0
+        for line in f_label:
+            # Jump if current line is a seperator line or the label is not wanted.
+            if line == "###\n":
+                current_idx += 1
+                continue
+            # Parse the wanted line for labels
+            if current_idx == id_label:
+                edge_label_num +=1 
+                tmp = line.strip().split()
+                edge_info[str(tmp[0])+ "_" + str (tmp[1]) ] =  tmp[2]
+        y = []
+        if edge_label_num == 0:
+            return None
+        # print("edge_info", edge_info)
+        for i in range(len(edge_index[0])):
+            # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
+            value = (int(edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] ))
+            y.append(value)
+        
+        # print("new graph\n" , x, edge_index, y)
+        y = torch.tensor(y, dtype=torch.float)
+        data = Data(x=x, edge_index=edge_index,  y=y)
+    else:
+        print("wrong label", id_label)
+        assert(False)
+
+    f_label.close()
+    return data
+    
 def load_data(graph_dir, label_dir, id_label, graph_files):
     """
     Function:
@@ -39,185 +327,11 @@ def load_data(graph_dir, label_dir, id_label, graph_files):
     dataset = []
     for file in graph_files:
         # Get edge data
-        edge = []
-        f_graph = open(os.path.join(graph_dir, file), 'r')
-        for line in f_graph:
-            n_out, n_in = line.strip().split()
-            edge.append([int(n_out), int(n_in)])
-        edge = torch.tensor(edge, dtype=torch.long)
-        edge_index = edge.t().contiguous()
-        if contains_self_loops(edge_index):
-            print(edge_index)
-            assert False
-        f_graph.close()
-
-
-        # Get feature data 
-        feat_filename = file[:-4]+"_feature.txt"
-        f_feat = open(os.path.join(graph_dir, feat_filename), 'r')
-        x = []
-        num_node = 0
-        asap = {}
-        num_ancestor = {}
-        num_descendant = {}
-        ## read feature
-        startnode_feature = False
-        start_nodes = {}
-        for line in f_feat:
-            if "###" in line:
-                startnode_feature = True
-                continue
-
-            if not startnode_feature:
-                
-                features = line.strip()
-                features = features.split(" ")
-                # print(features)
-                int_features = []
-                for s in features:
-                    int_features.append(int(s))
-                final_features = []
-                for index in label_feature[id_label]:
-                    final_features.append(int_features[index])
-
-                asap[num_node] = int_features[0]
-                num_ancestor [num_node] = int_features[5]
-                num_descendant [num_node] = int_features[6]
-                    
-                x.append(final_features)
-                num_node += 1
-            else:
-                tmp = line.strip().split()
-                tmp = list(map(int, tmp))
-                start_nodes[(tmp[0], tmp[1])] = tmp[2]
-
-        x = torch.tensor(x, dtype=torch.long)
-        f_feat.close()
-
-
-
-        # print("filename", file)
-        # Get label data
-        f_label = open(os.path.join(label_dir, file), 'r')
-        if id_label == 0:  # Schedule Order or Communication Value
-            y = np.zeros(num_node)  # Spare space for labels in case the node is out-of-order
-            current_idx = 0  # Indicate which label is reading
-            for line in f_label:
-                # Jump if current line is a seperator line or the label is not wanted.
-                if line == "###\n":
-                    current_idx += 1
-                    continue
-                # Parse the wanted line for labels
-                if current_idx == id_label:  # We need to
-                    a, b = line.strip().split()
-                    y[int(a)] = int(b)  # Should the id of node written in the label? NO.
-            print(y)
-            y = torch.tensor(y, dtype=torch.float)
-            data = Data(x=x, edge_index=edge_index, y=y)
+        data = get_single_graph_data(graph_dir, label_dir, file, id_label)
+        if data is not None:
             dataset.append(data)
-        elif id_label == 1:
-            y = np.zeros(num_node)  # Spare space for labels in case the node is out-of-order
-            current_idx = 0  # Indicate which label is reading
-            for line in f_label:
-                # Jump if current line is a seperator line or the label is not wanted.
-                if line == "###\n":
-                    current_idx += 1
-                    continue
-                # Parse the wanted line for labels
-                if current_idx == id_label:  # We need to
-                    a, b = line.strip().split()
-                    y[int(a)] = int(b)  # Should the id of node written in the label? NO.
-            # print(y) 
-            y = torch.tensor(y, dtype=torch.float)
-            new_edge_index = []
-            new_edge_index.append([])
-            new_edge_index.append([])
-            edge_attr = []
-            for i   in range(0, len(edge_index[0])):
-                a_node = int(edge_index[0][i])
-                b_node = int(edge_index[1][i])
-                new_edge_index[0].append(a_node)
-                new_edge_index[1].append(b_node)
-
-                #undirectd edge
-                new_edge_index[0].append(b_node)
-                new_edge_index[1].append(a_node)
-                asap_diff = abs (asap[a_node] - asap[b_node])
-                edge_attr.append([asap_diff, num_ancestor[a_node] ])
-                edge_attr.append([asap_diff, num_descendant[b_node] ])
-            # print("new graph\n" , edge_index, edge_attr, y)
-            new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
-            edge_attr = torch.tensor(edge_attr, dtype=torch.long)
-            data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr, y=y)
-            dataset.append(data)
-
-        elif id_label == 2:  # Start Node Distance or Neighbour distance
-            current_idx = 0  # Indicate which label is reading
-            new_edge_index = []
-            new_edge_index.append([])
-            new_edge_index.append([])
-            edge_attr = []
-            y = []
-            for line in f_label:
-                # Jump if current line is a seperator line or the label is not wanted.
-                if line == "###\n":
-                    current_idx += 1
-                    continue
-                # Parse the wanted line for labels
-                if current_idx == id_label:
-                    tmp = line.strip().split()
-                    tmp = list(map(int, tmp))
-                    if (tmp[0], tmp[1]) in start_nodes:
-                        new_edge_index[0].append(tmp[0])
-                        new_edge_index[1].append(tmp[1])
-                        edge_attr.append([start_nodes[(tmp[0], tmp[1])]])
-                        y.append(tmp[2])
-
-                    elif (tmp[1], tmp[0]) in start_nodes:
-                        new_edge_index[0].append(tmp[1])
-                        new_edge_index[1].append(tmp[0])
-                        edge_attr.append([start_nodes[(tmp[1], tmp[0])]])
-                        y.append(tmp[2])
-                    else:
-                        assert(False)
-            print("new graph\n" , edge_index, edge_attr, y)
-            new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
-            edge_attr = torch.tensor(edge_attr, dtype=torch.long)
-            y = torch.tensor(y, dtype=torch.float)
-            data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr, y=y)
-            dataset.append(data)
-        elif id_label == 3:
-            # neigbor distance
-            current_idx = 0  # Indicate which label is reading
-            edge_info = {}
-            edge_label_num = 0
-            for line in f_label:
-                # Jump if current line is a seperator line or the label is not wanted.
-                if line == "###\n":
-                    current_idx += 1
-                    continue
-                # Parse the wanted line for labels
-                if current_idx == id_label:
-                    edge_label_num +=1 
-                    tmp = line.strip().split()
-                    edge_info[str(tmp[0])+ "_" + str (tmp[1]) ] =  tmp[2]
-            y = []
-            if edge_label_num == 0:
-                continue
-            # print("edge_info", edge_info)
-            for i in range(len(edge_index[0])):
-                # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
-                value = (int(edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] ))
-                y.append(value)
-            
-            # print("new graph\n" , x, edge_index, y)
-            y = torch.tensor(y, dtype=torch.float)
-            data = Data(x=x, edge_index=edge_index,  y=y)
-            dataset.append(data)
-        else:
-            assert(False)
-        f_label.close()
     return dataset
+
 
 class dfg_dataset(InMemoryDataset):
 

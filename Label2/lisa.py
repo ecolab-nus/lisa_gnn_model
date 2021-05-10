@@ -36,6 +36,8 @@ from torch_geometric.utils import add_self_loops
 import matplotlib.pyplot as plt
 import numpy as np
 import shutil
+from torch_geometric.data import Data
+
 
 path = pathlib.Path().absolute()
 data_path = os.path.join(path.parent.parent, 'data')
@@ -51,19 +53,7 @@ label_indicator = 2
 batch_size = 10
 epoch = 1000
 
-####################### Dataset Loading ######################################
-dataset = dfg_dataset(data_path, label_indicator)
-dataset = dataset.shuffle()
 
-####################### Data loader for minibatch #############################
-# test:validation:train = 1:1:8
-test_dataset = dataset[:len(dataset) // 10]
-val_dataset = dataset[len(dataset) // 10:len(dataset) // 5]
-train_dataset = dataset[len(dataset) // 5:]
-
-test_loader = DataLoader(test_dataset, batch_size=batch_size)
-val_loader = DataLoader(val_dataset, batch_size=batch_size)
-train_loader = DataLoader(train_dataset, batch_size=batch_size)
 
 
 
@@ -86,8 +76,6 @@ class EdgeConv(MessagePassing):
         self.lin_n = Linear(node_channels, out_channels, bias=True)
         self.lin_e = Linear(edge_channels, out_channels, bias=True)
         self.lin_f = Linear(out_channels, out_channels, bias=True)
-        print("node_channels", node_channels)
-        print("edge_channels", edge_channels)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -98,12 +86,12 @@ class EdgeConv(MessagePassing):
     def forward(self, x, edge_index, edge_attr):
         # x has shape [N, in_channels]
         # edge_index has shape [2, E]
-        lisa_print(x)
-        lisa_print(edge_attr)
+        lisa_print(x, "x")
+        lisa_print(edge_attr, "edge_attr")
         x = self.lin_n(x)
         e = self.lin_e(edge_attr)
         x = self.propagate(x = x, edge_index  = edge_index)
-        lisa_print(e)
+        lisa_print(e, "e")
         out = self.lin_f(e + x)
         lisa_print(out)
         return out
@@ -206,33 +194,65 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
     print('Accuracy: {:.4f}'.format(acc))
 
 
-##################### Main function ####################
-device = torch.device('cpu')
-model = Net(dataset.num_node_features,dataset.num_edge_features, 1, 1).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
-save_id = 0
-####################### Model Testing #############################
-hist = history()
-for i in range(epoch):
-    if (i % val_freq):
-        loss = 0
-        # For whole train set do training
-        for data in train_loader:
-            # For each batch do training
-            loss += train(model, data, device, optimizer)
-        print("Epoch %d, Loss %.6f" % (i, loss))
-        hist.add_tl(loss / len(train_loader))
-    else:
-        # For whole validation set do training
-        loss, acc = validation(model, val_dataset, device)
-        print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc))
+def label2_inference(data: Data):
+    device = torch.device('cpu')
+    final_model_path  = pathlib.Path().absolute()
+    final_model_path = os.path.join(final_model_path, "Label2/checkpoint/final_model.pt")
+    m_model = Net(1, 1, 1, 1).to(device)
+    m_model.load_state_dict(torch.load(final_model_path))
+    pred = m_model(data.x, data.edge_index, data.edge_attr)
+    pred = torch.round(pred)
+    return pred
 
-hist.plot_hist()
-test(model, test_dataset, device)
-file_path = os.path.join("checkpoint", "final_model.pt")
-save_model(model, file_path)
-print(f'Save the final model!')
 
-# !!!! Remove the preprocessed folder AUTOMATICALLY!!!
-processed = os.path.join(data_path, 'processed')
-shutil.rmtree(processed)
+if __name__ == "__main__":
+
+    ####################### Dataset Loading ######################################
+    dataset = dfg_dataset(data_path, label_indicator)
+    dataset = dataset.shuffle()
+
+    ####################### Data loader for minibatch #############################
+    # test:validation:train = 1:1:8
+    test_dataset = dataset[:len(dataset) // 10]
+    val_dataset = dataset[len(dataset) // 10:len(dataset) // 5]
+    train_dataset = dataset[len(dataset) // 5:]
+
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size)
+
+    print("num_node_features", dataset.num_node_features)
+    print("num_edge_features", dataset.num_edge_features)
+
+
+    
+    ##################### Main function ####################
+    device = torch.device('cpu')
+    model = Net(dataset.num_node_features,dataset.num_edge_features, 1, 1).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
+    save_id = 0
+    ####################### Model Testing #############################
+    hist = history()
+    for i in range(epoch):
+        if (i % val_freq):
+            loss = 0
+            # For whole train set do training
+            for data in train_loader:
+                # For each batch do training
+                loss += train(model, data, device, optimizer)
+            print("Epoch %d, Loss %.6f" % (i, loss))
+            hist.add_tl(loss / len(train_loader))
+        else:
+            # For whole validation set do training
+            loss, acc = validation(model, val_dataset, device)
+            print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc))
+
+    hist.plot_hist()
+    test(model, test_dataset, device)
+    file_path = os.path.join("checkpoint", "final_model.pt")
+    save_model(model, file_path)
+    print(f'Save the final model!')
+
+    # !!!! Remove the preprocessed folder AUTOMATICALLY!!!
+    processed = os.path.join(data_path, 'processed')
+    shutil.rmtree(processed)

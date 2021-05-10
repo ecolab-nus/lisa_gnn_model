@@ -32,6 +32,7 @@ from torch_geometric.nn import SAGEConv
 from torch_geometric.datasets import Planetoid
 from torch_geometric.data import NeighborSampler as RawNeighborSampler, Batch, DataLoader
 from torch_geometric.utils import degree
+from torch_geometric.data import Data
 from torch_geometric.utils import add_self_loops
 import matplotlib.pyplot as plt
 import numpy as np
@@ -51,19 +52,7 @@ label_indicator = 3
 batch_size = 10
 epoch = 1000
 
-####################### Dataset Loading ######################################
-dataset = dfg_dataset(data_path, label_indicator)
-dataset = dataset.shuffle()
 
-####################### Data loader for minibatch #############################
-# test:validation:train = 1:1:8
-test_dataset = dataset[:len(dataset) // 10]
-val_dataset = dataset[len(dataset) // 10:len(dataset) // 5]
-train_dataset = dataset[len(dataset) // 5:]
-
-test_loader = DataLoader(test_dataset, batch_size=batch_size)
-val_loader = DataLoader(val_dataset, batch_size=batch_size)
-train_loader = DataLoader(train_dataset, batch_size=batch_size)
 
 
 
@@ -199,34 +188,58 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
 
     print('Accuracy: {:.4f}'.format(acc))
 
+def label3_inference(data: Data):
+    device = torch.device('cpu')
+    final_model_path  = pathlib.Path().absolute()
+    final_model_path = os.path.join(final_model_path, "Label3/checkpoint/final_model.pt")
+    m_model = Net(3, 1, 1).to(device)
+    m_model.load_state_dict(torch.load(final_model_path))
+    pred = m_model(data.x, data.edge_index)
+    pred = torch.round(pred)
+    return pred
 
-##################### Main function ####################
-device = torch.device('cpu')
-model = Net(dataset.num_node_features, 30, 2).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
-save_id = 0
-####################### Model Testing #############################
-hist = history()
-for i in range(epoch):
-    if (i % val_freq):
-        loss = 0
-        # For whole train set do training
-        for data in train_loader:
-            # For each batch do training
-            loss += train(model, data, device, optimizer)
-        print("Epoch %d, Loss %.6f" % (i, loss))
-        hist.add_tl(loss / len(train_loader))
-    else:
-        # For whole validation set do training
-        loss, acc = validation(model, val_dataset, device)
-        print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc))
+if __name__ == "__main__":
+    ####################### Dataset Loading ######################################
+    dataset = dfg_dataset(data_path, label_indicator)
+    dataset = dataset.shuffle()
 
-hist.plot_hist()
-test(model, test_dataset, device)
-file_path = os.path.join("checkpoint", "final_model.pt")
-save_model(model, file_path)
-print(f'Save the final model!')
+    ####################### Data loader for minibatch #############################
+    # test:validation:train = 1:1:8
+    test_dataset = dataset[:len(dataset) // 10]
+    val_dataset = dataset[len(dataset) // 10:len(dataset) // 5]
+    train_dataset = dataset[len(dataset) // 5:]
 
-# !!!! Remove the preprocessed folder AUTOMATICALLY!!!
-processed = os.path.join(data_path, 'processed')
-shutil.rmtree(processed)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size)
+
+    ##################### Main function ####################
+    device = torch.device('cpu')
+    model = Net(dataset.num_node_features, 1, 1).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
+    save_id = 0
+    ####################### Model Testing #############################
+    hist = history()
+    for i in range(epoch):
+        if (i % val_freq):
+            loss = 0
+            # For whole train set do training
+            for data in train_loader:
+                # For each batch do training
+                loss += train(model, data, device, optimizer)
+            print("Epoch %d, Loss %.6f" % (i, loss))
+            hist.add_tl(loss / len(train_loader))
+        else:
+            # For whole validation set do training
+            loss, acc = validation(model, val_dataset, device)
+            print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc))
+
+    hist.plot_hist()
+    test(model, test_dataset, device)
+    file_path = os.path.join("checkpoint", "final_model.pt")
+    save_model(model, file_path)
+    print(f'Save the final model!')
+
+    # !!!! Remove the preprocessed folder AUTOMATICALLY!!!
+    processed = os.path.join(data_path, 'processed')
+    shutil.rmtree(processed)
