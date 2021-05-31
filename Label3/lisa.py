@@ -52,8 +52,7 @@ label_indicator = 3
 batch_size = 10
 epoch = 1000
 
-
-
+model_name = "final_model"
 
 
 def save_model(m_model, PATH):
@@ -163,7 +162,7 @@ def validation(model, val_dataset, device):  # For validation, the input data is
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
         file_path = os.path.join("checkpoint", "bestacc.pt")
-        best_acc_model = "m_" + str(save_id) + "_" + str(acc) + ".pt"
+        
         save_model(model, file_path)
         save_id += 1
         print(f'Save model at Loss: {total_loss / len(val_dataset):.4f}, Accuracy: {acc:.4f}')
@@ -191,7 +190,7 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
 def label3_inference(data: Data):
     device = torch.device('cpu')
     final_model_path  = pathlib.Path().absolute()
-    final_model_path = os.path.join(final_model_path, "Label3/checkpoint/final_model.pt")
+    final_model_path = os.path.join(final_model_path, "Label3/checkpoint/"+model_name+".pt")
     m_model = Net(3, 1, 1).to(device)
     m_model.load_state_dict(torch.load(final_model_path))
     pred = m_model(data.x, data.edge_index)
@@ -199,6 +198,11 @@ def label3_inference(data: Data):
     return pred
 
 if __name__ == "__main__":
+
+    if len(sys.argv) > 1:
+        model_name = sys.argv[1]
+
+
     ####################### Dataset Loading ######################################
     dataset = dfg_dataset(data_path, label_indicator)
     dataset = dataset.shuffle()
@@ -236,7 +240,7 @@ if __name__ == "__main__":
 
     hist.plot_hist()
     test(model, test_dataset, device)
-    file_path = os.path.join("checkpoint", "final_model.pt")
+    file_path = os.path.join("checkpoint", model_name+".pt")
     save_model(model, file_path)
     print(f'Save the final model!')
 
