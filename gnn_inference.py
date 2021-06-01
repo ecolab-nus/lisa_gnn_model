@@ -13,6 +13,10 @@ from Label3.lisa import label3_inference
 
 
 graph_name =  sys.argv[1]
+infer_model_name = "final_model"
+if len(sys.argv) > 2:
+    infer_model_name =  sys.argv[2]
+
 graph_file_name = graph_name + ".txt"
 print("graph_file_name", graph_file_name)
 graph_path = pathlib.Path().absolute().parent
@@ -23,7 +27,7 @@ get_graph(graph_file_name , graph_path, graph_path )
 label_file =  open(graph_path + "/" + graph_name + "_label.txt", "w")
 
 data = get_single_inference_graph_data(graph_path, graph_file_name, 0)
-value = label0_inference(data)
+value = label0_inference(data, infer_model_name)
 value = value.tolist()
 print("label0", value)
 for i in range(len(value)):
@@ -32,7 +36,7 @@ label_file.write("###\n")
 
 
 data = get_single_inference_graph_data(graph_path, graph_file_name, 1)
-value = label1_inference(data)
+value = label1_inference(data, infer_model_name)
 value = value.tolist()
 print("label1", value)
 for i in range(len(value)):
@@ -40,7 +44,7 @@ for i in range(len(value)):
 label_file.write("###\n")
 
 data = get_single_inference_graph_data(graph_path, graph_file_name, 2)
-value = label2_inference(data)
+value = label2_inference(data, infer_model_name)
 value = value.tolist()
 print("label2", value)
 for i in range(len(value)):
@@ -49,7 +53,7 @@ label_file.write("###\n")
 
 
 data = get_single_inference_graph_data(graph_path, graph_file_name, 3)
-value = label3_inference(data)
+value = label3_inference(data, infer_model_name)
 value = value.tolist()
 print("label3", value)
 for i in range(len(value)):
