@@ -9,7 +9,7 @@ from torch_geometric.utils import degree
 
 
 label_feature = {}
-for i in range(0, 4):
+for i in range(0, 5):
     label_feature[i] = []
 
 
@@ -21,11 +21,14 @@ for i in range(0, 4):
 # 5: no_ancestor 
 # 6: no_descendant 
 # 7: is_mem 
-label_feature[0] = [0, 1, 2 ,3, 4]
+label_feature[0] = [ 0,1, 2 ,5, 6]
 label_feature[1] = [5, 6, 0]
-label_feature[2] = [6]
+label_feature[2] = [5,6]
 label_feature[3] = [5, 6, 7]
+label_feature[4] = [0, 5, 6]
 
+
+#this function is to get graph data for inference
 def get_single_inference_graph_data(graph_dir,  file, id_label):
     data = Data()
     edge = []
@@ -50,15 +53,15 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
     num_ancestor = {}
     num_descendant = {}
     ## read feature
-    startnode_feature = False
-    start_nodes = {}
+    same_level_nodes = {}
+    edge_feature = {}
+    tag_id = 0
     for line in f_feat:
         if "###" in line:
-            startnode_feature = True
+            tag_id +=1
             continue
 
-        if not startnode_feature:
-            
+        if tag_id == 0:
             features = line.strip()
             features = features.split(" ")
             # print(features)
@@ -75,10 +78,21 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
                 
             x.append(final_features)
             num_node += 1
-        else:
+            
+        
+        elif tag_id == 1:
             tmp = line.strip().split()
             tmp = list(map(int, tmp))
-            start_nodes[(tmp[0], tmp[1])] = tmp[2]
+            same_level_nodes[(tmp[0], tmp[1])] = tmp[2]
+            
+        elif tag_id == 2:
+            tmp = line.strip().split()
+            tmp = list(map(int, tmp))
+            edge_feature[str(tmp[0])+ "_" + str (tmp[1])] = tmp[2:]
+
+        else:
+            assert(False)
+            
 
     x = torch.tensor(x, dtype=torch.long)
     f_feat.close()
@@ -87,7 +101,7 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
 
     # print("filename", file)
     # Get label data
-    if id_label == 0:  # Schedule Order or Communication Value
+    if id_label == 0:  # Schedule Order 
         data = Data(x=x, edge_index=edge_index)
     elif id_label == 1:
         new_edge_index = []
@@ -118,7 +132,7 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
         new_edge_index.append([])
         edge_attr = []
         y = []
-        for node in start_nodes.items():
+        for node in same_level_nodes.items():
             new_edge_index[0].append(node[0][0])
             new_edge_index[1].append(node[0][1])
             edge_attr.append([node[1] ])
@@ -129,12 +143,24 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
         data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr)
     elif id_label == 3:
         data = Data(x=x, edge_index=edge_index)
+    elif id_label == 4:
+        edge_attr = []
+        # print("edge_feature", edge_feature)
+        for i in range(len(edge_index[0])):
+            # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
+            # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) )
+            assert(str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) in edge_feature.keys())
+            edge_attr.append(edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))])
+        
+        # print("new graph\n" , x, edge_index, y)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
     else:
         assert(False)
 
     return data
    
-
+# this function is to get data for training
 def get_single_graph_data(graph_dir, label_dir,  file, id_label):
     data = Data()
     edge = []
@@ -159,15 +185,16 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
     num_ancestor = {}
     num_descendant = {}
     ## read feature
-    startnode_feature = False
-    start_nodes = {}
+    # startnode_feature = False
+    same_level_nodes = {}
+    edge_feature = {}
+    tag_id = 0
     for line in f_feat:
         if "###" in line:
-            startnode_feature = True
+            tag_id +=1
             continue
 
-        if not startnode_feature:
-            
+        if tag_id == 0:
             features = line.strip()
             features = features.split(" ")
             # print(features)
@@ -184,10 +211,21 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
                 
             x.append(final_features)
             num_node += 1
-        else:
+            
+        
+        elif tag_id == 1:
             tmp = line.strip().split()
             tmp = list(map(int, tmp))
-            start_nodes[(tmp[0], tmp[1])] = tmp[2]
+            same_level_nodes[(tmp[0], tmp[1])] = tmp[2]
+            
+        elif tag_id == 2:
+            tmp = line.strip().split()
+            tmp = list(map(int, tmp))
+            edge_feature[str(tmp[0])+ "_" + str (tmp[1])] = tmp[2:]
+
+        else:
+            assert(False)
+            
 
     x = torch.tensor(x, dtype=torch.long)
     f_feat.close()
@@ -208,7 +246,7 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
             # Parse the wanted line for labels
             if current_idx == id_label:  # We need to
                 a, b = line.strip().split()
-                y[int(a)] = int(b)  # Should the id of node written in the label? NO.
+                y[int(a)] = int(b)/2   # Should the id of node written in the label? NO.
         y = torch.tensor(y, dtype=torch.float)
         data = Data(x=x, edge_index=edge_index, y=y)
     elif id_label == 1:
@@ -261,16 +299,16 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
             if current_idx == id_label:
                 tmp = line.strip().split()
                 tmp = list(map(int, tmp))
-                if (tmp[0], tmp[1]) in start_nodes:
+                if (tmp[0], tmp[1]) in same_level_nodes:
                     new_edge_index[0].append(tmp[0])
                     new_edge_index[1].append(tmp[1])
-                    edge_attr.append([start_nodes[(tmp[0], tmp[1])]])
+                    edge_attr.append([same_level_nodes[(tmp[0], tmp[1])]])
                     y.append(tmp[2])
 
-                elif (tmp[1], tmp[0]) in start_nodes:
+                elif (tmp[1], tmp[0]) in same_level_nodes:
                     new_edge_index[0].append(tmp[1])
                     new_edge_index[1].append(tmp[0])
-                    edge_attr.append([start_nodes[(tmp[1], tmp[0])]])
+                    edge_attr.append([same_level_nodes[(tmp[1], tmp[0])]])
                     y.append(tmp[2])
                 else:
                     assert(False)
@@ -282,7 +320,7 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
     elif id_label == 3:
         # neigbor distance
         current_idx = 0  # Indicate which label is reading
-        edge_info = {}
+        edge_label_info = {}
         edge_label_num = 0
         for line in f_label:
             # Jump if current line is a seperator line or the label is not wanted.
@@ -293,19 +331,51 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
             if current_idx == id_label:
                 edge_label_num +=1 
                 tmp = line.strip().split()
-                edge_info[str(tmp[0])+ "_" + str (tmp[1]) ] =  tmp[2]
+                edge_label_info[str(tmp[0])+ "_" + str (tmp[1]) ] =  tmp[2]
         y = []
         if edge_label_num == 0:
             return None
         # print("edge_info", edge_info)
         for i in range(len(edge_index[0])):
             # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
-            value = (int(edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] ))
+            value = (int(edge_label_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] ))
             y.append(value)
         
         # print("new graph\n" , x, edge_index, y)
         y = torch.tensor(y, dtype=torch.float)
         data = Data(x=x, edge_index=edge_index,  y=y)
+    elif id_label == 4:
+        # neigbor distance
+        current_idx = 0  # Indicate which label is reading
+        edge_label_info = {}
+        edge_label_num = 0
+        tag_id = 3
+        for line in f_label:
+            # Jump if current line is a seperator line or the label is not wanted.
+            if line == "###\n":
+                current_idx += 1
+                continue
+            # Parse the wanted line for labels
+            if current_idx == tag_id:
+                edge_label_num +=1 
+                tmp = line.strip().split()
+                edge_label_info[str(tmp[0])+ "_" + str (tmp[1]) ] =  tmp[3]
+        y = []
+        edge_attr = []
+        if edge_label_num == 0:
+            return None
+        # print("edge_feature", edge_feature)
+        for i in range(len(edge_index[0])):
+            # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
+            y.append( (int(edge_label_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )) )
+            # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) )
+            assert(str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) in edge_feature.keys())
+            edge_attr.append(edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))])
+        
+        # print("new graph\n" , x, edge_index, y)
+        y = torch.tensor(y, dtype=torch.float)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
     else:
         print("wrong label", id_label)
         assert(False)

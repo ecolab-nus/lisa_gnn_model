@@ -326,9 +326,11 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1:
         model_name = sys.argv[1]
-        data_path = os.path.join(path.parent.parent, 'data')
+        data_path = os.path.join(path.parent.parent, 'data/training_dataset')
         data_path = os.path.join(data_path,model_name )
-
+    processed = os.path.join(data_path, 'processed')
+    if os.path.exists(processed):
+        shutil.rmtree(processed)
 
     ####################### Dataset Loading ######################################
     dataset = dfg_dataset(data_path, label_indicator)
