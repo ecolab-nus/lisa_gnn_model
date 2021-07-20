@@ -66,57 +66,117 @@ def load_model(PATH):
 
 
 class EdgeConv(MessagePassing):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, edge_channels, out_channels):
         super(EdgeConv, self).__init__() #  "Max" aggregation.
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.lin_p = Linear(in_channels, out_channels, bias=True)
-        self.lin_c = Linear(in_channels, out_channels, bias=True)
+        self.edge_channels = edge_channels
+        self.lin_s = Linear(in_channels, out_channels, bias=True)
+        self.lin_d = Linear(in_channels, out_channels, bias=True)
+        self.lin_e = Linear(edge_channels, out_channels, bias=True)
         self.lin_1 = Linear(out_channels, out_channels, bias=True)
         self.reset_parameters()
 
     def reset_parameters(self):
         self.lin_1.reset_parameters()
-        self.lin_p.reset_parameters()
-        self.lin_c.reset_parameters()
+        self.lin_s.reset_parameters()
+        self.lin_d.reset_parameters()
+        self.lin_s.reset_parameters()
 
-    def forward(self, x, edge_index):
+    def forward(self, x, edge_index, edge_attr):
         # x has shape [N, in_channels]
         # edge_index has shape [2, E]
         lisa_print(x)
-        out = self.propagate(x = x, edge_index  = edge_index)
-        lisa_print(out)
-        out = self.lin_1(out)
+        n_out = self.propagate(x = x, edge_index  = edge_index)
+        lisa_print(n_out)
+        e_out = self.lin_e(edge_attr)
+        out = self.lin_1(e_out+ n_out)
         lisa_print(out)
         return out
     def aggregate(self, inputs, x,edge_index,  x_i: Tensor, x_j: Tensor) -> Tensor:
 
-        return  torch.abs(self.lin_p(x_i) - self.lin_c(x_j))
+        return  (self.lin_s(x_i) + self.lin_d(x_j))
     
+class EdgeConv2(MessagePassing):
+    def __init__(self, in_channels, edge_channels, out_channels):
+        super(EdgeConv2, self).__init__() #  "Max" aggregation.
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.edge_channels = edge_channels
+        self.lin_n = Linear(1, out_channels, bias=True)
+        self.lin_l = Linear(1, out_channels, bias=True)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.lin_n.reset_parameters()
+        self.lin_l.reset_parameters()
+
+    def forward(self, x, edge_index, edge_attr):
+        # x has shape [N, in_channels]
+        # edge_index has shape [2, E]
+        lisa_print(x)
+        # n_out = self.propagate(x = x, edge_index  = edge_index, edge_attr = edge_attr)
+        
+
+        # collect degree 
+        scatter_index = (edge_index[1,:])
+        scatter_index = scatter_index.view(-1,1)
+        neighbor_max = scatter(edge_attr, index = scatter_index, dim =0, reduce="max")
+        neighbor_max = self.propagate(x = neighbor_max, edge_index  = edge_index, edge_attr = edge_attr)
+        lisa_print(neighbor_max)
+        # print(neighbor_max, neighbor_max.size())
+        neighbor_max = neighbor_max.pow(-0.5)
+        # print("neighbor_max",neighbor_max, neighbor_max.size())
+        neighbor_max [neighbor_max!=neighbor_max] = 0 # elimante nan
+        neighbor_max[neighbor_max == float("inf")] = 1 #elimante inef
+        edge_attr[edge_attr == float("inf")] = 1 #elimante inef
+        edge_attr [edge_attr!=edge_attr] = 0
+        # print("neighbor_max",neighbor_max, neighbor_max.size())
+        norm = neighbor_max * edge_attr
+        e_out = self.lin_n(norm * edge_attr)
+        # print("edout",e_out, e_out.size())
+        # print("edge_attr", edge_attr,edge_attr.size())
+        
+        out = self.lin_l(e_out+ edge_attr)
+        lisa_print(out)
+        # print("out", out,out.size())
+        # assert(False)
+        out[out == float("inf")] = 1 #elimante inef
+        return out
+
+    def aggregate(self, inputs, x,edge_index, edge_attr, x_i) -> Tensor:
+        
+        # print(index, index.size())
+        return x_i
 
 
 class Net(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, num_layers):
+    def __init__(self, in_channels, edge_channels, num_layers):
         super(Net, self).__init__()
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
       
-        self.convs.append(EdgeConv(in_channels, 1))
+        self.convs.append(EdgeConv(in_channels, edge_channels, 1))
+        self.convs.append(EdgeConv2(in_channels, edge_channels, 1))
 
-    def forward(self, x, adjs):
+    def forward(self, x, adjs, edge_attr):
         # TODO Here is just a template
         # print("adjs", adjs)
         for i, conv in enumerate(self.convs):
             x = x.float()
             # print("x", x)
             # print("adjs", adjs)
-
-            x = conv(x, adjs)
-            if i != self.num_layers - 1:
-                # x = x.relu()
-                x = F.dropout(x, p=0.5, training=self.training)
+            if i == 0:
+                edge_attr = conv(x, adjs, edge_attr)
+            else:
+                x = conv(x, adjs, edge_attr)
+            # print("i", i, x)
+            # if i != self.num_layers - 1:
+            #     # x = x.relu()
+            #     x = F.dropout(x, p=0.5, training=self.training)
             # print("x",i, x)
         x = torch.flatten(x)
+        # print()
         return x
 
 
@@ -124,7 +184,8 @@ def train(model, data, device, optimizer):  # For training, the input data is a 
     model.train()
     optimizer.zero_grad()
     data = data.to(device)
-    out = model(data.x, data.edge_index)
+    out = model(data.x, data.edge_index, data.edge_attr)
+    # print("zz1", out, data.y)
     try:
         loss = F.mse_loss(out, data.y, reduction='mean')
     except Exception as error:
@@ -142,7 +203,7 @@ def validation(model, val_dataset, device):  # For validation, the input data is
     for data in val_dataset:
         # print(data.num_graphs)
         data = data.to(device)
-        out = model(data.x, data.edge_index)
+        out = model(data.x, data.edge_index, data.edge_attr)
         try:
             loss = F.mse_loss(out, data.y, reduction='mean')
         except Exception as error:
@@ -174,7 +235,7 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
     correct, n_test_nodes = 0, 0
     for data in test_dataset:
         data = data.to(device)
-        pred = model(data.x, data.edge_index)
+        pred = model(data.x, data.edge_index, data.edge_attr)
         pred = torch.round(pred)
         pred = pred.long().float().flatten()
         y = data.y.flatten()
@@ -187,11 +248,13 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
 
     print('Accuracy: {:.4f}'.format(acc))
 
+    return '{:.4f}'.format(acc)
+
 def label3_inference(data: Data, infer_model_name = "final_model"):
     device = torch.device('cpu')
     final_model_path  = pathlib.Path().absolute()
     final_model_path = os.path.join(final_model_path, "Label3/checkpoint/"+infer_model_name+".pt")
-    m_model = Net(3, 1, 1).to(device)
+    m_model = Net(3, 2, 1).to(device)
     m_model.load_state_dict(torch.load(final_model_path))
     pred = m_model(data.x, data.edge_index)
     pred = torch.round(pred)
@@ -225,7 +288,7 @@ if __name__ == "__main__":
 
     ##################### Main function ####################
     device = torch.device('cpu')
-    model = Net(dataset.num_node_features, 1, 1).to(device)
+    model = Net(dataset.num_node_features, dataset.num_edge_features, 1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
     save_id = 0
     ####################### Model Testing #############################
@@ -245,10 +308,14 @@ if __name__ == "__main__":
             print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc))
 
     hist.plot_hist()
-    test(model, test_dataset, device)
+    acc = test(model, test_dataset, device)
     file_path = os.path.join("checkpoint", model_name+".pt")
     save_model(model, file_path)
     print(f'Save the final model!')
+
+    acc_file = open('../accuracy_log.txt', 'a+')
+    acc_file.write(model_name + " 3 "+ str(acc)+"\n")
+    acc_file.close()
 
     # !!!! Remove the preprocessed folder AUTOMATICALLY!!!
     processed = os.path.join(data_path, 'processed')

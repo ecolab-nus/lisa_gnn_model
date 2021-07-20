@@ -8,24 +8,40 @@ from torch_geometric.utils import contains_self_loops
 from torch_geometric.utils import degree
 
 
-label_feature = {}
+label_node_feature = {}
 for i in range(0, 5):
-    label_feature[i] = []
+    label_node_feature[i] = []
 
+label_edge_feature = {}
+for i in range(0, 5):
+    label_edge_feature[i] = []
 
+#node feature
 # 0: asap 
 # 1: in_degree 
 # 2: out_degree 
-# 3: no_grandparent
-# 4: no_grandchild 
+# 3: no_grandparent  this is not used
+# 4: no_grandchild  this is not used
 # 5: no_ancestor 
 # 6: no_descendant 
 # 7: is_mem 
-label_feature[0] = [ 0,1, 2 ,5, 6]
-label_feature[1] = [5, 6, 0]
-label_feature[2] = [5,6]
-label_feature[3] = [5, 6, 7]
-label_feature[4] = [0, 5, 6]
+
+#edge feature
+#0. number_nodes_in_between
+#1. same_asap_node
+#2. asap_diff
+label_node_feature[0] = [ 0,1, 2 ,5, 6]
+label_node_feature[1] = [5, 6, 0]
+label_node_feature[2] = [5,6]
+label_node_feature[3] = [5, 6, 7]
+label_node_feature[4] = [0, 5, 6]
+
+
+#edge feature
+label_edge_feature[3] = [0, 1, 2]
+label_edge_feature[4] = [0, 1, 2]
+
+
 
 
 #this function is to get graph data for inference
@@ -69,7 +85,7 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
             for s in features:
                 int_features.append(int(s))
             final_features = []
-            for index in label_feature[id_label]:
+            for index in label_node_feature[id_label]:
                 final_features.append(int_features[index])
 
             asap[num_node] = int_features[0]
@@ -141,16 +157,31 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
         new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
         edge_attr = torch.tensor(edge_attr, dtype=torch.long)
         data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr)
+        
     elif id_label == 3:
-        data = Data(x=x, edge_index=edge_index)
+        edge_attr = []
+        for i in range(len(edge_index[0])):
+            # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
+            # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) )
+            temp_features = []
+            int_edge_feature = edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))]
+            for index in label_edge_feature[id_label]:
+                temp_features.append(int_edge_feature[index])
+            edge_attr.append(temp_features)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+
     elif id_label == 4:
         edge_attr = []
         # print("edge_feature", edge_feature)
         for i in range(len(edge_index[0])):
             # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
             # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) )
-            assert(str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) in edge_feature.keys())
-            edge_attr.append(edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))])
+            temp_features = []
+            int_edge_feature = edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))]
+            for index in label_edge_feature[id_label]:
+                temp_features.append(int_edge_feature[index])
+            edge_attr.append(temp_features)
         
         # print("new graph\n" , x, edge_index, y)
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
@@ -202,7 +233,7 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
             for s in features:
                 int_features.append(int(s))
             final_features = []
-            for index in label_feature[id_label]:
+            for index in label_node_feature[id_label]:
                 final_features.append(int_features[index])
 
             asap[num_node] = int_features[0]
@@ -333,6 +364,7 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
                 tmp = line.strip().split()
                 edge_label_info[str(tmp[0])+ "_" + str (tmp[1]) ] =  tmp[2]
         y = []
+        edge_attr = []
         if edge_label_num == 0:
             return None
         # print("edge_info", edge_info)
@@ -340,10 +372,18 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
             # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
             value = (int(edge_label_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] ))
             y.append(value)
+            assert(str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) in edge_feature.keys())
+            temp_features = []
+            int_edge_feature = edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))]
+            for index in label_edge_feature[id_label]:
+                temp_features.append(int_edge_feature[index])
+            edge_attr.append(temp_features)
+           
         
         # print("new graph\n" , x, edge_index, y)
         y = torch.tensor(y, dtype=torch.float)
-        data = Data(x=x, edge_index=edge_index,  y=y)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+        data = Data(x=x, edge_index=edge_index,  edge_attr=edge_attr, y=y)
     elif id_label == 4:
         # neigbor distance
         current_idx = 0  # Indicate which label is reading
@@ -369,8 +409,11 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
             # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i]))  , edge_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )
             y.append( (int(edge_label_info[ str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i])) ] )) )
             # print( str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) )
-            assert(str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] )) in edge_feature.keys())
-            edge_attr.append(edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))])
+            temp_features = []
+            int_edge_feature = edge_feature[str(int(edge_index[0][i])) +"_"+  str(int(edge_index[1][i] ))]
+            for index in label_edge_feature[id_label]:
+                temp_features.append(int_edge_feature[index])
+            edge_attr.append(temp_features)
         
         # print("new graph\n" , x, edge_index, y)
         y = torch.tensor(y, dtype=torch.float)

@@ -118,63 +118,64 @@ class LISASchedConv(MessagePassing):
         # neigbor_info = self.propagate(x = (x[1], x[1]), edge_index = temp_edge_index,  deg_trans = x[1] )
         # x [1] = neigbor_info
          
-        trans_neig  = self.lin_1(x[1])
+        node_attribute_factors  = self.lin_1(x[1])
         ori  =  x[0].view(-1, 1)
-        result = self.lin_a(ori) + trans_neig
+        result = self.lin_a(ori) + node_attribute_factors
 
-        result= self.lin_b(result)
+        result = self.lin_b(result)
 
-        x: OptPairTensor = (result, trans_neig)
+
+        x: OptPairTensor = (result, node_attribute_factors)
         
         return x
 
-    def aggregate(self, inputs, x: Union[Tensor, OptPairTensor],edge_index,  deg_trans_i: Tensor,) -> Tensor:
-        # print("deg_trans_i",deg_trans_i,  deg_trans_i.size())
-        # print("edge_index[1]", edge_index[1], edge_index[1].size())
-        # index  =edge_index[1].resize(1, len(edge_index[1]))
-        index  = torch.zeros(self.side_feature, len(edge_index[0]))
-        for i in range(0, self.side_feature):
-            index [i] =  edge_index[0]
+    # def aggregate(self, inputs, x: Union[Tensor, OptPairTensor],edge_index,  deg_trans_i: Tensor,) -> Tensor:
+    #     # print("deg_trans_i",deg_trans_i,  deg_trans_i.size())
+    #     # print("edge_index[1]", edge_index[1], edge_index[1].size())
+    #     # index  =edge_index[1].resize(1, len(edge_index[1]))
+    #     index  = torch.zeros(self.side_feature, len(edge_index[0]))
+    #     for i in range(0, self.side_feature):
+    #         index [i] =  edge_index[0]
        
-        deg_trans_i = torch.transpose(deg_trans_i, 0 , 1)
-        index = index.long()
-        # print("index", index, index.size())
-        neigbor_degree_sum = scatter(deg_trans_i, index = index,  dim =1,  reduce="sum") 
-        # neigbor_degree_sum2 = scatter(deg_trans_j[:,1], index = edge_index[1],   reduce="sum") 
-        # neigbor_degree_sum3 = scatter(deg_trans_j[:,2], index = edge_index[1],   reduce="sum") 
+    #     deg_trans_i = torch.transpose(deg_trans_i, 0 , 1)
+    #     index = index.long()
+    #     # print("index", index, index.size())
+    #     neigbor_degree_sum = scatter(deg_trans_i, index = index,  dim =1,  reduce="sum") 
+    #     # neigbor_degree_sum2 = scatter(deg_trans_j[:,1], index = edge_index[1],   reduce="sum") 
+    #     # neigbor_degree_sum3 = scatter(deg_trans_j[:,2], index = edge_index[1],   reduce="sum") 
         
-        neigbor_degree_sum = torch.transpose(neigbor_degree_sum, 0, 1)
-        # print("neigbor_degree_sum", neigbor_degree_sum, neigbor_degree_sum.size())
-        return neigbor_degree_sum
+    #     neigbor_degree_sum = torch.transpose(neigbor_degree_sum, 0, 1)
+    #     # print("neigbor_degree_sum", neigbor_degree_sum, neigbor_degree_sum.size())
+    #     return neigbor_degree_sum
 
         
-    def old_aggregate(self, inputs, x: Union[Tensor, OptPairTensor], und_edge_index: Tensor, deg_trans_j: Tensor,) -> Tensor:
+    # def old_aggregate(self, inputs, x: Union[Tensor, OptPairTensor], und_edge_index: Tensor, deg_trans_j: Tensor,) -> Tensor:
         
 
-        # print("dim size", len(x[0]))
-        # print("und_edge_index[1]", und_edge_index[1].size())
-        # print("deg_trans_j", deg_trans_j.size())
-        deg_trans_j  =deg_trans_j.resize(1, len(deg_trans_j))
+    #     # print("dim size", len(x[0]))
+    #     # print("und_edge_index[1]", und_edge_index[1].size())
+    #     # print("deg_trans_j", deg_trans_j.size())
+    #     deg_trans_j  =deg_trans_j.resize(1, len(deg_trans_j))
       
-        # print("index", index.size())
-        neigbor_degree_sum = scatter(deg_trans_j, index = und_edge_index[1],  dim_size = len(x[0]),  reduce="sum") 
-        # print("parent_val", parent_val.size(), parent_val)
-        # print("child_val", child_val.size(), child_val)
-        # print("(neigbor_degree_sum", neigbor_degree_sum.size(), neigbor_degree_sum)
-        neigbor_degree_sum = neigbor_degree_sum.resize(len(x[0]), 1)
-        neigbor_degree_sum =  self.lin_nn(neigbor_degree_sum)
+    #     # print("index", index.size())
+    #     neigbor_degree_sum = scatter(deg_trans_j, index = und_edge_index[1],  dim_size = len(x[0]),  reduce="sum") 
+    #     # print("parent_val", parent_val.size(), parent_val)
+    #     # print("child_val", child_val.size(), child_val)
+    #     # print("(neigbor_degree_sum", neigbor_degree_sum.size(), neigbor_degree_sum)
+    #     neigbor_degree_sum = neigbor_degree_sum.resize(len(x[0]), 1)
+    #     neigbor_degree_sum =  self.lin_nn(neigbor_degree_sum)
 
-        deg = degree(und_edge_index[0], num_nodes=len(x[0]))
-        deg = deg.clamp_(1).view(-1, 1)
-        deg = self.lin_n(deg)
+    #     deg = degree(und_edge_index[0], num_nodes=len(x[0]))
+    #     deg = deg.clamp_(1).view(-1, 1)
+    #     deg = self.lin_n(deg)
 
-        neigbor_degree_sum = neigbor_degree_sum.add(deg)
+    #     neigbor_degree_sum = neigbor_degree_sum.add(deg)
         
-        # child_val = child_val.resize(len(x[0]), 1)
-        final =  self.lin_d(x[0]).add(neigbor_degree_sum)
-        result: OptPairTensor = (final, neigbor_degree_sum)
-        # print("final", final.size(), final)
-        return result
+    #     # child_val = child_val.resize(len(x[0]), 1)
+    #     final =  self.lin_d(x[0]).add(neigbor_degree_sum)
+    #     result: OptPairTensor = (final, neigbor_degree_sum)
+    #     # print("final", final.size(), final)
+    #     return result
 
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
@@ -219,9 +220,9 @@ class LISASchedConv2(MessagePassing):
         # print("side_feature", self.side_feature)
         # print("edge", edge_index)
         
-        if isinstance(x, Tensor):
-            # print("x", x.size())
-            x: OptPairTensor = (x[:, 0], x[:, 1:])
+        # if isinstance(x, Tensor):
+        #     # print("x", x.size())
+        #     x: OptPairTensor = (x[:, 0], x[:, 1:])
         
 
         temp_edge_index =  to_undirected(edge_index, len(x[0]) )
@@ -230,7 +231,7 @@ class LISASchedConv2(MessagePassing):
         # print("x", x[0].size())
         # print("x[1]", x[1], x[1].size())
 
-        neihgbor_change = self.propagate(x = (x[1], x[1]), edge_index = temp_edge_index,  deg_trans = x[1] )
+        neihgbor_change = self.propagate(x = (x[1], x[1]), edge_index = temp_edge_index,  neighbor_change = x[1] )
         # x [1] = neigbor_info
          
         neihgbor_change  = self.lin_1(neihgbor_change)
@@ -244,20 +245,20 @@ class LISASchedConv2(MessagePassing):
         
         return x
 
-    def aggregate(self, inputs, x: Union[Tensor, OptPairTensor],edge_index,  deg_trans_i: Tensor,) -> Tensor:
+    def aggregate(self, inputs, x: Union[Tensor, OptPairTensor],edge_index,  neighbor_change_j: Tensor,) -> Tensor:
         # print("deg_trans_i",deg_trans_i,  deg_trans_i.size())
         # print("edge_index[1]", edge_index[1], edge_index[1].size())
         # index  =edge_index[1].resize(1, len(edge_index[1]))
         index  = torch.zeros(self.side_feature, len(edge_index[0]))
         for i in range(0, self.side_feature):
-            index [i] =  edge_index[0]
+            index [i] =  edge_index[1]
         index = index.long()
-        deg_trans_i = torch.transpose(deg_trans_i, 0 , 1)
+        neighbor_change_j = torch.transpose(neighbor_change_j, 0 , 1)
         
         # print("index", index, index.size())
-        neigbor_degree_max = scatter(deg_trans_i, index = index,  dim =1,  reduce="max") 
-        neigbor_degree_mean = scatter(deg_trans_i, index = index,  dim =1,  reduce="mean") 
-        neigbor_degree_min = scatter(deg_trans_i, index = index,  dim =1,  reduce="min") 
+        neigbor_degree_max = scatter(neighbor_change_j, index = index,  dim =1,  reduce="max") 
+        neigbor_degree_mean = scatter(neighbor_change_j, index = index,  dim =1,  reduce="mean") 
+        neigbor_degree_min = scatter(neighbor_change_j, index = index,  dim =1,  reduce="min") 
         neigbor_degree_max = neigbor_degree_max.view(-1, 1)
         neigbor_degree_mean = neigbor_degree_mean.view(-1, 1)
         neigbor_degree_min = neigbor_degree_min.view(-1, 1)
@@ -429,13 +430,15 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
         print("diff ", pred, y)
         n_test_nodes += torch.numel(data.y)
         correct += int(pred.eq(y).sum().item())
-        correct += int(pred.eq(y-1).sum().item())
-        correct += int(pred.eq(y+1).sum().item())
+        # correct += int(pred.eq(y-1).sum().item())
+        # correct += int(pred.eq(y+1).sum().item())
     acc = correct / n_test_nodes
 
     #     print('No operation accuracy (difference between feature and label): {:.4f}'.format(nop_acc))
 
     print('Accuracy: {:.4f}'.format(acc))
+
+    return '{:.4f}'.format(acc)
 
 def label0_inference(data: Data, infer_model_name = "final_model"):
     device = torch.device('cpu')
@@ -497,10 +500,14 @@ if __name__ == "__main__":
 
     hist.plot_hist()
 
-    test(model, test_dataset, device)
+    acc = test(model, test_dataset, device)
     file_path = os.path.join("checkpoint", model_name+".pt")
     save_model(model, file_path)
     print(f'Save the final model!')
+
+    acc_file = open('../accuracy_log.txt', 'a+')
+    acc_file.write(model_name + " 0 "+ str(acc)+"\n")
+    acc_file.close()
 
     use_check = False
     if use_check:

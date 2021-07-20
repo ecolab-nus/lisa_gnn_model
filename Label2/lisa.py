@@ -193,6 +193,8 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
 
     print('Accuracy: {:.4f}'.format(acc))
 
+    return '{:.4f}'.format(acc)
+
 
 def label2_inference(data: Data,infer_model_name = "final_model"):
     device = torch.device('cpu')
@@ -256,10 +258,14 @@ if __name__ == "__main__":
             print("#Val# Epoch %d, Loss %.6f, Acc %.6f" % (i, loss, acc))
 
     hist.plot_hist()
-    test(model, test_dataset, device)
+    acc = test(model, test_dataset, device)
     file_path = os.path.join("checkpoint", model_name+".pt")
     save_model(model, file_path)
     print(f'Save the final model!')
+
+    acc_file = open('../accuracy_log.txt', 'a+')
+    acc_file.write(model_name + " 2 "+ str(acc)+"\n")
+    acc_file.close()
 
     # !!!! Remove the preprocessed folder AUTOMATICALLY!!!
     processed = os.path.join(data_path, 'processed')
