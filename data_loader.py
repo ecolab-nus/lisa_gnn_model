@@ -30,16 +30,18 @@ for i in range(0, 5):
 #0. number_nodes_in_between
 #1. same_asap_node
 #2. asap_diff
-label_node_feature[0] = [ 0,1, 2 ,5, 6]
+#3. ancestor_
+#4. descendant
+label_node_feature[0] = [ 0,1, 2 ,5, 6, 7]
 label_node_feature[1] = [5, 6, 0]
 label_node_feature[2] = [5,6]
-label_node_feature[3] = [5, 6, 7]
+label_node_feature[3] = []
 label_node_feature[4] = [0, 5, 6]
 
 
 #edge feature
-label_edge_feature[3] = [0, 1, 2]
-label_edge_feature[4] = [0, 1, 2]
+label_edge_feature[3] = [0, 1, 2,3,4]
+label_edge_feature[4] = [0, 1, 2, 3, 4]
 
 
 
@@ -69,7 +71,7 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
     num_ancestor = {}
     num_descendant = {}
     ## read feature
-    same_level_nodes = {}
+    same_level_nodes_edge_info = {}
     edge_feature = {}
     tag_id = 0
     for line in f_feat:
@@ -99,7 +101,7 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
         elif tag_id == 1:
             tmp = line.strip().split()
             tmp = list(map(int, tmp))
-            same_level_nodes[(tmp[0], tmp[1])] = tmp[2]
+            same_level_nodes_edge_info[(tmp[0], tmp[1])] = tmp[2:]
             
         elif tag_id == 2:
             tmp = line.strip().split()
@@ -148,14 +150,16 @@ def get_single_inference_graph_data(graph_dir,  file, id_label):
         new_edge_index.append([])
         edge_attr = []
         y = []
-        for node in same_level_nodes.items():
+        for node in same_level_nodes_edge_info.items():
             new_edge_index[0].append(node[0][0])
             new_edge_index[1].append(node[0][1])
-            edge_attr.append([node[1] ])
+            # print(node[1])
+            edge_attr.append(node[1] )
                    
         # print("new graph\n" , edge_index, edge_attr, y)
         new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
         edge_attr = torch.tensor(edge_attr, dtype=torch.long)
+        # print(edge_attr)
         data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr)
         
     elif id_label == 3:
@@ -217,7 +221,7 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
     num_descendant = {}
     ## read feature
     # startnode_feature = False
-    same_level_nodes = {}
+    same_level_nodes_edge_info = {}
     edge_feature = {}
     tag_id = 0
     for line in f_feat:
@@ -247,7 +251,7 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
         elif tag_id == 1:
             tmp = line.strip().split()
             tmp = list(map(int, tmp))
-            same_level_nodes[(tmp[0], tmp[1])] = tmp[2]
+            same_level_nodes_edge_info[(tmp[0], tmp[1])] = tmp[2:]
             
         elif tag_id == 2:
             tmp = line.strip().split()
@@ -330,16 +334,16 @@ def get_single_graph_data(graph_dir, label_dir,  file, id_label):
             if current_idx == id_label:
                 tmp = line.strip().split()
                 tmp = list(map(int, tmp))
-                if (tmp[0], tmp[1]) in same_level_nodes:
+                if (tmp[0], tmp[1]) in same_level_nodes_edge_info:
                     new_edge_index[0].append(tmp[0])
                     new_edge_index[1].append(tmp[1])
-                    edge_attr.append([same_level_nodes[(tmp[0], tmp[1])]])
+                    edge_attr.append(same_level_nodes_edge_info[(tmp[0], tmp[1])])
                     y.append(tmp[2])
 
-                elif (tmp[1], tmp[0]) in same_level_nodes:
+                elif (tmp[1], tmp[0]) in same_level_nodes_edge_info:
                     new_edge_index[0].append(tmp[1])
                     new_edge_index[1].append(tmp[0])
-                    edge_attr.append([same_level_nodes[(tmp[1], tmp[0])]])
+                    edge_attr.append(same_level_nodes_edge_info[(tmp[1], tmp[0])])
                     y.append(tmp[2])
                 else:
                     assert(False)

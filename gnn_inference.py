@@ -4,7 +4,7 @@ from torch_geometric.data import Data
 sys.path.append('../dfg_generator/dfg')
 sys.path.append('../dfg_generator')
 sys.path.append('../dfg_generator/graph_generation')
-from util import get_graph
+from transformer import get_graph
 from data_loader import get_single_inference_graph_data
 from Label0.lisa import label0_inference
 from Label1.lisa import label1_inference

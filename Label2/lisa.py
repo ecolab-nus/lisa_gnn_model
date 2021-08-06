@@ -17,7 +17,7 @@ import pathlib
 from typing import Union, Tuple
 from torch_geometric.typing import OptPairTensor, Adj, Size
 from torch import Tensor
-from torch.nn import Linear
+from torch.nn import Linear, ReLU
 import torch.nn.functional as F
 # from torch_sparse import SparseTensor
 from torch_geometric.nn.conv import MessagePassing
@@ -52,7 +52,7 @@ val_freq = 50  # Do validation for every [val_freq] epochs
 # 3: neighbour distance
 label_indicator = 2
 batch_size = 10
-epoch = 1000
+epoch = 300
 
 
 
@@ -75,8 +75,10 @@ class EdgeConv(MessagePassing):
         self.edge_channels = edge_channels
         self.out_channels = out_channels
         self.lin_n = Linear(node_channels, out_channels, bias=True)
-        self.lin_e = Linear(edge_channels, out_channels, bias=True)
-        self.lin_f = Linear(out_channels, out_channels, bias=True)
+        self.lin_e = Linear(edge_channels, edge_channels , bias=True)
+        self.lin_f = Linear(edge_channels , out_channels, bias=True)
+        self.relu = ReLU()
+        self.relu2 = ReLU()
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -92,8 +94,10 @@ class EdgeConv(MessagePassing):
         x = self.lin_n(x)
         e = self.lin_e(edge_attr)
         x = self.propagate(x = x, edge_index  = edge_index)
+        e = self.relu(e)
         lisa_print(e, "e")
-        out = self.lin_f(e + x)
+        out = self.lin_f(e )
+        # out = self.relu2(out)
         lisa_print(out)
         return out
     def aggregate(self, inputs, x,edge_index,  x_i: Tensor, x_j: Tensor) -> Tensor:
@@ -133,6 +137,7 @@ def train(model, data, device, optimizer):  # For training, the input data is a 
     data = data.to(device)
     out = model(data.x, data.edge_index, data.edge_attr)
     try:
+        # loss = F.multilabel_soft_margin_loss(out, data.y)
         loss = F.mse_loss(out, data.y, reduction='mean')
     except Exception as error:
         raise error
@@ -152,6 +157,8 @@ def validation(model, val_dataset, device):  # For validation, the input data is
         out = model(data.x, data.edge_index, data.edge_attr)
         try:
             loss = F.mse_loss(out, data.y, reduction='mean')
+
+            # loss = F.multilabel_soft_margin_loss(out, data.y)
         except Exception as error:
             raise error
         total_loss += loss.item()
@@ -187,6 +194,8 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
         print("diff ", pred, y)
         n_test_nodes += torch.numel(data.y)
         correct += int(pred.eq(y).sum().item())
+        correct += int(pred.eq(y+1).sum().item())
+        correct += int(pred.eq(y-1).sum().item())
     acc = correct / n_test_nodes
 
     #     print('No operation accuracy (difference between feature and label): {:.4f}'.format(nop_acc))
@@ -200,7 +209,8 @@ def label2_inference(data: Data,infer_model_name = "final_model"):
     device = torch.device('cpu')
     final_model_path  = pathlib.Path().absolute()
     final_model_path = os.path.join(final_model_path, "Label2/checkpoint/"+infer_model_name+".pt")
-    m_model = Net(2, 1, 1, 1).to(device)
+    # print(infer_model_name)
+    m_model = Net(2, edge_channels = 8, hidden_channels= 1, num_layers = 1).to(device)
     m_model.load_state_dict(torch.load(final_model_path))
     pred = m_model(data.x, data.edge_index, data.edge_attr)
     pred = torch.round(pred)
@@ -239,7 +249,7 @@ if __name__ == "__main__":
     ##################### Main function ####################
     device = torch.device('cpu')
     model = Net(dataset.num_node_features,dataset.num_edge_features, 1, 1).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=5e-3)
     save_id = 0
     ####################### Model Testing #############################
     hist = history()

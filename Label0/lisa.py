@@ -51,7 +51,7 @@ val_freq = 20  # Do validation for every [val_freq] epochs
 # 3: neighbour distance
 label_indicator = 0
 batch_size = 10
-epoch = 500
+epoch = 300
 
 
 
@@ -444,7 +444,7 @@ def label0_inference(data: Data, infer_model_name = "final_model"):
     device = torch.device('cpu')
     final_model_path  = pathlib.Path().absolute()
     final_model_path = os.path.join(final_model_path, "Label0/checkpoint/"+infer_model_name+".pt")
-    m_model = Net(5, 30, 2).to(device)
+    m_model = Net(6, 30, 2).to(device)
     m_model.load_state_dict(torch.load(final_model_path))
     pred = m_model(data.x, data.edge_index)
     pred = torch.round(pred)
@@ -480,6 +480,8 @@ if __name__ == "__main__":
     # model = SAGENet(dataset.num_node_features, hidden_channels=64, out_channels= 1, num_layers=2)
 
     model = Net(dataset.num_node_features, 30, 2).to(device)
+    # print(dataset.num_node_features)
+    # assert(False)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
     save_id = 0
     ####################### Model Testing #############################

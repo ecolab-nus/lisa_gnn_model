@@ -50,7 +50,7 @@ val_freq = 50  # Do validation for every [val_freq] epochs
 # 3: neighbour distance
 label_indicator = 3
 batch_size = 10
-epoch = 1000
+epoch = 300
 
 model_name = "final_model"
 
@@ -66,36 +66,29 @@ def load_model(PATH):
 
 
 class EdgeConv(MessagePassing):
-    def __init__(self, in_channels, edge_channels, out_channels):
+    def __init__(self, edge_channels, hidden_channels, out_channels):
         super(EdgeConv, self).__init__() #  "Max" aggregation.
-        self.in_channels = in_channels
         self.out_channels = out_channels
         self.edge_channels = edge_channels
-        self.lin_s = Linear(in_channels, out_channels, bias=True)
-        self.lin_d = Linear(in_channels, out_channels, bias=True)
         self.lin_e = Linear(edge_channels, out_channels, bias=True)
-        self.lin_1 = Linear(out_channels, out_channels, bias=True)
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.lin_1.reset_parameters()
-        self.lin_s.reset_parameters()
-        self.lin_d.reset_parameters()
-        self.lin_s.reset_parameters()
+        self.lin_e.reset_parameters()
 
     def forward(self, x, edge_index, edge_attr):
         # x has shape [N, in_channels]
         # edge_index has shape [2, E]
         lisa_print(x)
-        n_out = self.propagate(x = x, edge_index  = edge_index)
-        lisa_print(n_out)
+        # n_out = self.propagate(x = x, edge_index  = edge_index)
+        # lisa_print(n_out)
         e_out = self.lin_e(edge_attr)
-        out = self.lin_1(e_out+ n_out)
-        lisa_print(out)
-        return out
+        lisa_print(e_out)
+        return e_out
     def aggregate(self, inputs, x,edge_index,  x_i: Tensor, x_j: Tensor) -> Tensor:
+        pass
 
-        return  (self.lin_s(x_i) + self.lin_d(x_j))
+        # return  (self.lin_s(x_i) + self.lin_d(x_j))
     
 class EdgeConv2(MessagePassing):
     def __init__(self, in_channels, edge_channels, out_channels):
@@ -103,41 +96,79 @@ class EdgeConv2(MessagePassing):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.edge_channels = edge_channels
-        self.lin_n = Linear(1, out_channels, bias=True)
+        self.lin_aggr1 = Linear(4, 4, bias=True)
+        self.lin_aggr2 = Linear(4, 1, bias=True)
         self.lin_l = Linear(1, out_channels, bias=True)
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.lin_n.reset_parameters()
+        self.lin_aggr1.reset_parameters()
+        self.lin_aggr2.reset_parameters()
+        # self.lin_min.reset_parameters()
+        # self.lin_mean.reset_parameters()
         self.lin_l.reset_parameters()
 
     def forward(self, x, edge_index, edge_attr):
         # x has shape [N, in_channels]
         # edge_index has shape [2, E]
         lisa_print(x)
+        # print("edge_attr", edge_attr, edge_attr.size())
         # n_out = self.propagate(x = x, edge_index  = edge_index, edge_attr = edge_attr)
+        # edge_attr = edge_attr.view(1,-1)
+        undi_edge_index, undi_edge_attr =  to_undirected(edge_index = edge_index, edge_attr = edge_attr)
+
         
 
-        # collect degree 
-        scatter_index = (edge_index[1,:])
+        # collect neighbor information 
+        scatter_index = (undi_edge_index[1,:])
         scatter_index = scatter_index.view(-1,1)
-        neighbor_max = scatter(edge_attr, index = scatter_index, dim =0, reduce="max")
+        neighbor_max = scatter(undi_edge_attr, index = scatter_index, dim =0, reduce="max")
+        neighbor_mean = scatter(undi_edge_attr, index = scatter_index, dim =0, reduce="mean")
+        neighbor_min = scatter(undi_edge_attr, index = scatter_index, dim =0, reduce="min")
+        neighbor_sum= scatter(undi_edge_attr, index = scatter_index, dim =0, reduce="sum")
+
+        # normalize
         neighbor_max = self.propagate(x = neighbor_max, edge_index  = edge_index, edge_attr = edge_attr)
+        neighbor_mean = self.propagate(x = neighbor_mean, edge_index  = edge_index, edge_attr = edge_attr)
+        neighbor_min = self.propagate(x = neighbor_min, edge_index  = edge_index, edge_attr = edge_attr)
+        neighbor_sum = self.propagate(x = neighbor_sum, edge_index  = edge_index, edge_attr = edge_attr)
         lisa_print(neighbor_max)
         # print(neighbor_max, neighbor_max.size())
-        neighbor_max = neighbor_max.pow(-0.5)
-        # print("neighbor_max",neighbor_max, neighbor_max.size())
-        neighbor_max [neighbor_max!=neighbor_max] = 0 # elimante nan
+        neighbor_max = neighbor_max.pow(-1)
+        neighbor_max [neighbor_max!=neighbor_max] = 1 # elimante nan
         neighbor_max[neighbor_max == float("inf")] = 1 #elimante inef
+        neighbor_mean = neighbor_mean.pow(-1)
+        neighbor_mean [neighbor_mean!=neighbor_mean] = 1 # elimante nan
+        neighbor_mean[neighbor_mean == float("inf")] = 1 #elimante inef
+        neighbor_min = neighbor_min.pow(-1)
+        neighbor_min [neighbor_min!=neighbor_min] = 1 # elimante nan
+        neighbor_min[neighbor_min == float("inf")] = 1 #elimante inef
+        neighbor_sum = neighbor_sum.pow(-1)
+        neighbor_sum [neighbor_sum!=neighbor_sum] = 1 # elimante nan
+        neighbor_sum[neighbor_sum == float("inf")] = 1 #elimante inef
+
+
+        
         edge_attr[edge_attr == float("inf")] = 1 #elimante inef
-        edge_attr [edge_attr!=edge_attr] = 0
+        edge_attr [edge_attr!=edge_attr] = 1
         # print("neighbor_max",neighbor_max, neighbor_max.size())
-        norm = neighbor_max * edge_attr
-        e_out = self.lin_n(norm * edge_attr)
+        # norm_max = neighbor_max * edge_attr
+        # max_normed_attribute = self.lin_max(norm_max * edge_attr)
+
+        # norm_mean = neighbor_mean * edge_attr
+        # mean_normed_attribute = self.lin_mean(norm_mean * edge_attr)
+
+        # norm_min = neighbor_min * edge_attr
+        # min_normed_attribute = self.lin_min(norm_min * edge_attr)
         # print("edout",e_out, e_out.size())
         # print("edge_attr", edge_attr,edge_attr.size())
-        
-        out = self.lin_l(e_out+ edge_attr)
+        neihgbor_change = torch.stack((neighbor_max, neighbor_mean, neighbor_min, neighbor_sum),1)
+        neihgbor_change = neihgbor_change.view(-1, 4)
+        # neihgbor_change = self.lin_aggr1(neihgbor_change)
+        neihgbor_change = self.lin_aggr2(neihgbor_change)
+        #process normalized one
+        # print("neihgbor_change", neihgbor_change,neihgbor_change.size())
+        out = self.lin_l(edge_attr)+  neihgbor_change * edge_attr
         lisa_print(out)
         # print("out", out,out.size())
         # assert(False)
@@ -156,8 +187,8 @@ class Net(torch.nn.Module):
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
       
-        self.convs.append(EdgeConv(in_channels, edge_channels, 1))
-        self.convs.append(EdgeConv2(in_channels, edge_channels, 1))
+        self.convs.append(EdgeConv(edge_channels, edge_channels, 1))
+        self.convs.append(EdgeConv2(1, 1, 1))
 
     def forward(self, x, adjs, edge_attr):
         # TODO Here is just a template
@@ -242,6 +273,8 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
         print("diff ", pred, y)
         n_test_nodes += torch.numel(data.y)
         correct += int(pred.eq(y).sum().item())
+        correct += int(pred.eq(y+1).sum().item())
+        correct += int(pred.eq(y-1).sum().item())
     acc = correct / n_test_nodes
 
     #     print('No operation accuracy (difference between feature and label): {:.4f}'.format(nop_acc))
@@ -254,9 +287,9 @@ def label3_inference(data: Data, infer_model_name = "final_model"):
     device = torch.device('cpu')
     final_model_path  = pathlib.Path().absolute()
     final_model_path = os.path.join(final_model_path, "Label3/checkpoint/"+infer_model_name+".pt")
-    m_model = Net(3, 2, 1).to(device)
+    m_model = Net(3, 5, 1).to(device)
     m_model.load_state_dict(torch.load(final_model_path))
-    pred = m_model(data.x, data.edge_index)
+    pred = m_model(data.x, data.edge_index ,data.edge_attr)
     pred = torch.round(pred)
     return pred
 
