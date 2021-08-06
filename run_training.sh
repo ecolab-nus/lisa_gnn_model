@@ -5,9 +5,9 @@ cd Label0
 python lisa.py $final_model_name
 # cd ../Label1
 # python lisa.py $final_model_name
+cd ../Label1
+python lisa.py $final_model_name
 cd ../Label2
 python lisa.py $final_model_name
 cd ../Label3
-python lisa.py $final_model_name
-cd ../Label4
 python lisa.py $final_model_name
