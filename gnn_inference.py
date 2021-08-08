@@ -4,7 +4,7 @@ from torch_geometric.data import Data
 sys.path.append('../dfg_generator/dfg')
 sys.path.append('../dfg_generator')
 sys.path.append('../dfg_generator/graph_generation')
-from transformer import get_graph
+from dfg_transformer import transform_single_graph
 from data_loader import get_single_inference_graph_data
 from Label0.lisa import label0_inference
 from Label1.lisa import label1_inference
@@ -23,7 +23,7 @@ graph_file_name = graph_name + ".txt"
 print("graph_file_name", graph_file_name)
 graph_path = pathlib.Path().absolute().parent
 graph_path = os.path.join(graph_path, "data/infer")
-get_graph(graph_file_name , graph_path, graph_path )
+transform_single_graph(graph_file_name , graph_path, graph_path )
 
 
 label_file =  open(graph_path + "/" + graph_name + "_label.txt", "w")
@@ -65,7 +65,7 @@ label_file.write("###\n")
 data = get_single_inference_graph_data(graph_path, graph_file_name, 3)
 value = label3_inference(data, infer_model_name)
 value = value.tolist()
-print("label4", value)
+print("label3", value)
 for i in range(len(value)):
     label_file.write(str(int(data.edge_index[0][i]))+ " " + str(int(data.edge_index[1][i])) + " "+ str(int(value[i])) + "\n")
 

@@ -51,7 +51,7 @@ val_freq = 20  # Do validation for every [val_freq] epochs
 # 3: neighbour distance
 label_indicator = 0
 batch_size = 10
-epoch = 300
+epoch = 500
 
 
 

@@ -52,7 +52,7 @@ val_freq = 50  # Do validation for every [val_freq] epochs
 # 3: neighbour distance
 label_indicator = 1
 batch_size = 10
-epoch = 300
+epoch = 500
 
 
 
@@ -208,7 +208,7 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
 def label1_inference(data: Data,infer_model_name = "final_model"):
     device = torch.device('cpu')
     final_model_path  = pathlib.Path().absolute()
-    final_model_path = os.path.join(final_model_path, "Label2/checkpoint/"+infer_model_name+".pt")
+    final_model_path = os.path.join(final_model_path, "Label1/checkpoint/"+infer_model_name+".pt")
     # print(infer_model_name)
     m_model = Net(2, edge_channels = 8, hidden_channels= 1, num_layers = 1).to(device)
     m_model.load_state_dict(torch.load(final_model_path))
