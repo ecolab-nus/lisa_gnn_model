@@ -32,17 +32,40 @@ for i in range(0, 5):
 #2. asap_diff
 #3. ancestor_
 #4. descendant
+
+# original:
 label_node_feature[0] = [ 0,1, 2 ,5, 6, 7]
-label_node_feature[1] = [5,6]
+label_node_feature[1] = [1,2]
 label_node_feature[2] = []
 label_node_feature[3] = [0, 5, 6]
 
 
-#edge feature
-label_edge_feature[2] = [0, 1, 2,3,4]
+#label_node_feature[0] = [ 1] #26% down on 4x4 CGRA
+# label_node_feature[0] = [ 0,1, 2 ,5, 6, 7]
+# label_node_feature[1] = [5,6]
+#label_node_feature[1] = [1,2]
+#label_node_feature[2] = []
+#label_node_feature[3] = [0, 5, 6]
+
+
+#original edge feature
+label_edge_feature[2] = [0, 1, 2, 3, 4]
 label_edge_feature[3] = [0, 1, 2, 3, 4]
 
-label_to_hash_tag_index_ = {}
+
+#label_edge_feature[2] = [3]
+
+# label_edge_feature[3] = [0, 1, 2, 3, 4]
+
+#label_edge_feature[3] = [3] #affect 7% accuracy on 4x4 CGRA, 11% accuracy on 3x3 CGRA (up to 30%), 5% accuracy on 8x8 CGRA
+#label_edge_feature[3] = [] #affect 30% accuracy on 4x4 CGRA, 20% accuracy on 3x3 CGRA (up to 30%), 17% accuracy on 8x8 CGRA
+
+
+new_same_level_info_index= [0, 1, 2, 3, 4, 5, 6, 7 ]
+# new_same_level_info_index= [4]
+
+
+label_to_hash_tag_index_ = {} # this is to read label from txt file. Hash tag means the "#####"
 label_to_hash_tag_index_[0] = 0
 label_to_hash_tag_index_[1] = 2
 label_to_hash_tag_index_[2] = 3
@@ -337,22 +360,51 @@ def get_single_graph_data(graph_dir, label_dir,  file, label_id):
             if current_idx == label_to_hash_tag_index_[label_id]:
                 tmp = line.strip().split()
                 tmp = list(map(int, tmp))
+
+                
+                new_info = []
+
                 if (tmp[0], tmp[1]) in same_level_nodes_edge_info:
                     new_edge_index[0].append(tmp[0])
                     new_edge_index[1].append(tmp[1])
-                    edge_attr.append(same_level_nodes_edge_info[(tmp[0], tmp[1])])
+
+
+                    info = same_level_nodes_edge_info[(tmp[0], tmp[1])]
+                    
+                    # print(len(info)
+                    for i in new_same_level_info_index:
+                        new_info.append(info[i])
+                    # print(new_info)
+                    edge_attr.append(new_info)
+
                     y.append(tmp[2])
+                    # assert(False)
 
                 elif (tmp[1], tmp[0]) in same_level_nodes_edge_info:
                     new_edge_index[0].append(tmp[1])
                     new_edge_index[1].append(tmp[0])
-                    edge_attr.append(same_level_nodes_edge_info[(tmp[1], tmp[0])])
+
+                    info = same_level_nodes_edge_info[(tmp[1], tmp[0])]
+                    
+                    # print(len(info))
+                    for i in new_same_level_info_index:
+                        new_info.append(info[i])
+                    # print(new_info)
+                    edge_attr.append(new_info)
+
+
+                    # edge_attr.append(same_level_nodes_edge_info[(tmp[1], tmp[0])])
                     y.append(tmp[2])
                 else:
                     assert(False)
         # print("new graph\n" , edge_index, edge_attr, y)
         new_edge_index = torch.tensor(new_edge_index, dtype=torch.long)
+        # print(len(edge_attr))
+        
+        # print(len(new_edge_attr))
         edge_attr = torch.tensor(edge_attr, dtype=torch.long)
+        
+        # assert(False)
         y = torch.tensor(y, dtype=torch.float)
         data = Data(x=x, edge_index=new_edge_index, edge_attr = edge_attr, y=y)
     elif label_id == 2:

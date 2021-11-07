@@ -4,7 +4,7 @@ sys.path.append('../../dfg_generator')
 sys.path.append('../../dfg_generator/dfg')
 sys.path.append('../../dfg_generator/graph_generation')
 
-from data_loader import dfg_dataset
+from data_loader import *
 from history import history
 
 import os
@@ -444,7 +444,7 @@ def label0_inference(data: Data, infer_model_name = "final_model"):
     device = torch.device('cpu')
     final_model_path  = pathlib.Path().absolute()
     final_model_path = os.path.join(final_model_path, "Label0/checkpoint/"+infer_model_name+".pt")
-    m_model = Net(6, 30, 2).to(device)
+    m_model = Net(len(label_node_feature[0]), 30, 2).to(device)
     m_model.load_state_dict(torch.load(final_model_path))
     pred = m_model(data.x, data.edge_index)
     pred = torch.round(pred)

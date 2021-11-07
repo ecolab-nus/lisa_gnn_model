@@ -274,7 +274,7 @@ if __name__ == "__main__":
     print(f'Save the final model!')
 
     acc_file = open('../accuracy_log.txt', 'a+')
-    acc_file.write(model_name + " 2 "+ str(acc)+"\n")
+    acc_file.write(model_name + " 1 "+ str(acc)+"\n")
     acc_file.close()
 
     # !!!! Remove the preprocessed folder AUTOMATICALLY!!!
