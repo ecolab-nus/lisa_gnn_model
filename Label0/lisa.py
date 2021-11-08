@@ -427,7 +427,7 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
         
         y = compact_order(y)
         pred = compact_order(pred)
-        print("diff ", pred, y)
+        # print("diff ", pred, y)
         n_test_nodes += torch.numel(data.y)
         correct += int(pred.eq(y).sum().item())
         # correct += int(pred.eq(y-1).sum().item())

@@ -246,6 +246,8 @@ def validation(model, val_dataset, device):  # For validation, the input data is
         n_val_nodes += torch.numel(data.y)
         # print("zz1", pred, y)
         correct += int(pred.eq(y).sum().item())
+        correct += int(pred.eq(y+1).sum().item())
+        correct += int(pred.eq(y-1).sum().item())
     acc = correct / n_val_nodes
     hist.add_vl(total_loss / len(val_dataset))
     is_best = hist.add_valid_acc(acc)
@@ -270,7 +272,7 @@ def test(model, test_dataset, device):  # For test, the input data is WHOLE TEST
         pred = torch.round(pred)
         pred = pred.long().float().flatten()
         y = data.y.flatten()
-        print("diff ", pred, y)
+        # print("diff ", pred, y)
         n_test_nodes += torch.numel(data.y)
         correct += int(pred.eq(y).sum().item())
         correct += int(pred.eq(y+1).sum().item())
