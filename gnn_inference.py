@@ -3,8 +3,7 @@ import pathlib
 from torch_geometric.data import Data
 sys.path.append('../dfg_generator/dfg')
 sys.path.append('../dfg_generator')
-sys.path.append('../dfg_generator/graph_generation')
-from dfg_transformer import transform_single_graph
+from dfg_gnn_attributes_generator import transform_single_graph
 from data_loader import get_single_inference_graph_data
 from Label0.lisa import label0_inference
 from Label1.lisa import label1_inference
