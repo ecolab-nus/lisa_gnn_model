@@ -1,4 +1,3 @@
-conda activate lisa
 final_model_name="$1"
 echo "final_model_name $final_model_name "
 cd Label0
